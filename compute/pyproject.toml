@@ -4,7 +4,18 @@ version = "0.1.0"
 description = "Planet Caravan compute service"
 requires-python = ">=3.14"
 dependencies = [
+    "astropy>=8.0.2",
+    "astroquery>=0.4.11",
     "fastapi>=0.162.5",
+    "httpx>=0.28.1",
+    "numpy>=2.5.4",
+    "photutils>=3.1.1",
+    "pillow>=13.0.0",
+    "prometheus-client>=0.26.0",
+    "pydantic-settings>=2.16.2",
+    "pyvo>=1.10.0",
+    "reproject>=0.21.0",
+    "scipy>=1.18.1",
     "uvicorn[standard]>=0.54.0",
 ]
 

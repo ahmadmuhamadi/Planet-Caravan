@@ -54,7 +54,7 @@ func (s *stubCompute) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.resolveCalls.Add(1)
 		var req computeclient.ResolveRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		if req.Name != "Barnard's Star" {
+		if !strings.EqualFold(req.Name, "Barnard's Star") { // SIMBAD ignores case
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = fmt.Fprintf(w, `{"error":{"code":"not_found","message":"No object named %s.","details":{}}}`, req.Name)
 			return
@@ -172,11 +172,11 @@ func decode[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
 }
 
 type jobStatus struct {
-	ID       string           `json:"id"`
-	Status   string           `json:"status"`
-	Progress int              `json:"progress"`
-	Result   *view            `json:"result"`
-	Error    *store.JobError  `json:"error"`
+	ID       string          `json:"id"`
+	Status   string          `json:"status"`
+	Progress int             `json:"progress"`
+	Result   *view           `json:"result"`
+	Error    *store.JobError `json:"error"`
 }
 
 // waitJob polls GET /jobs/{id} until the job ends.

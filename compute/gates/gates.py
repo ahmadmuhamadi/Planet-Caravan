@@ -177,7 +177,9 @@ def g1() -> None:
     print("collections:", collections())
     c = resolve("Barnard's star")
     rows = query_images(c, 0.5 * u.arcmin)
-    t = Irsa.query_sia(pos=(at(c, rows[0]["t_min"]), 0.5 * u.arcmin), collection=rows[0]["collection"])
+    t = Irsa.query_sia(
+        pos=(at(c, rows[0]["t_min"]), 0.5 * u.arcmin), collection=rows[0]["collection"]
+    )
     print("columns:", t.colnames)
     by_det: dict[int, tuple[float, float]] = {}
     for r in t:
@@ -260,9 +262,7 @@ def g2_target(name: str) -> dict:
         "dec": c.dec.deg,
         "images": len(rows),
         "collections": sorted({r["collection"] for r in rows}),
-        "epochs": [
-            (Time(ep[0]["t_min"], format="mjd").iso[:10], len(ep)) for ep in epochs
-        ],
+        "epochs": [(Time(ep[0]["t_min"], format="mjd").iso[:10], len(ep)) for ep in epochs],
         "per_det": dict(sorted(per_det.items())),
         "clean_epochs": len(clean_epochs),
         "pass": len(epochs) >= 2 and len(clean_epochs) >= 2,
@@ -279,7 +279,10 @@ def g2() -> None:
         print(f"### {s['name']}  (J2000 {s['ra']:.5f} {s['dec']:.5f})")
         print(f"images: {s['images']} from {s['collections']}")
         print(f"epochs: {len(s['epochs'])} -> " + ", ".join(f"{d} ({n})" for d, n in s["epochs"]))
-        print("| det | exposures checked | detected (SNR>=5) | clean | saturated core | flagged core |")
+        print(
+            "| det | exposures checked | detected (SNR>=5) | clean "
+            "| saturated core | flagged core |"
+        )
         print("|---|---|---|---|---|---|")
         for d, v in s["per_det"].items():
             print(f"| D{d} | {v['n']} | {v['det']} | {v['clean']} | {v['sat']} | {v['flag']} |")
@@ -339,7 +342,7 @@ def g3(name: str, fov: float, out: Path) -> None:
     epochs = group_epochs(rows)
     ref_pos = at(c, epochs[0][0]["t_min"])
     grid, shape = tan_grid(ref_pos, fov)
-    print(f"{name}: {len(rows)} images, {len(epochs)} epochs, grid {shape} @ {PIXEL_SCALE}\"")
+    print(f'{name}: {len(rows)} images, {len(epochs)} epochs, grid {shape} @ {PIXEL_SCALE}"')
 
     def load(r):
         h = cutout(r["access_url"], ref_pos, fov * 1.2)
@@ -369,7 +372,7 @@ def g3(name: str, fov: float, out: Path) -> None:
 
     gaia = gaia_field(ref_pos, fov / 60 * 0.75)
     print(f"Gaia stars G<16 in field: {len(gaia)}")
-    print("| epoch | det | n exp | n stars | dx\" | dy\" | residual\" | scatter\" | pass |")
+    print('| epoch | det | n exp | n stars | dx" | dy" | residual" | scatter" | pass |')
     print("|---|---|---|---|---|---|---|---|---|")
     worst = 0.0
     for (i, det), (co, mjd, n) in sorted(frames.items()):
@@ -400,8 +403,11 @@ def g3(name: str, fov: float, out: Path) -> None:
         scat = float(np.median(np.hypot(o[:, 0] - mdx, o[:, 1] - mdy)))
         worst = max(worst, res)
         ok = res <= ALIGN_THRESHOLD_ARCSEC
-        print(f"| {i} | D{det} | {n} | {len(o)} | {mdx:+.2f} | {mdy:+.2f} | {res:.2f} | {scat:.2f} | {ok} |")
-    print(f"\nworst frame residual: {worst:.2f}\" (threshold {ALIGN_THRESHOLD_ARCSEC}\")")
+        print(
+            f"| {i} | D{det} | {n} | {len(o)} | {mdx:+.2f} | {mdy:+.2f} "
+            f"| {res:.2f} | {scat:.2f} | {ok} |"
+        )
+    print(f'\nworst frame residual: {worst:.2f}" (threshold {ALIGN_THRESHOLD_ARCSEC}")')
 
     # Shared stretch per detector from the reference epoch, applied to every epoch.
     out.mkdir(parents=True, exist_ok=True)

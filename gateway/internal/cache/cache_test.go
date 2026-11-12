@@ -9,10 +9,10 @@ import (
 func TestRoundCoords(t *testing.T) {
 	for _, tc := range []struct{ ra, dec, wantRA, wantDec float64 }{
 		{10, 20, 10, 20},
-		{10.000001, -20.000001, 10, -20},              // 0.0036" rounds away
-		{10.00002, 0, 10 + 1.0/36000, 0},               // 0.072" rounds to 0.1"
-		{360, 0, 0, 0},                                 // RA wraps
-		{359.999999, 90, 0, 90},                        // rounds up to 360, wraps
+		{10.000001, -20.000001, 10, -20}, // 0.0036" rounds away
+		{10.00002, 0, 10 + 1.0/36000, 0}, // 0.072" rounds to 0.1"
+		{360, 0, 0, 0},                   // RA wraps
+		{359.999999, 90, 0, 90},          // rounds up to 360, wraps
 		{0, -90, 0, -90},
 	} {
 		ra, dec := RoundCoords(tc.ra, tc.dec)

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- build: static SPA into /app/build ----
-FROM node:24-alpine AS build
+FROM node:25-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
@@ -12,7 +12,7 @@ ENV PUBLIC_GATEWAY_URL=${PUBLIC_GATEWAY_URL}
 RUN npm run build
 
 # ---- runtime: unprivileged nginx serving static files ----
-FROM nginxinc/nginx-unprivileged:1.29-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/build /usr/share/nginx/html
 EXPOSE 8080

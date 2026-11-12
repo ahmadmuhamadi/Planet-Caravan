@@ -9,6 +9,6 @@ describe('/+page.svelte', () => {
 
 		await expect
 			.element(page.getByRole('heading', { level: 1 }))
-			.toHaveTextContent('SPHEREx Sky Explorer');
+			.toHaveTextContent('Planet Caravan');
 	});
 });

@@ -1,4 +1,4 @@
-// Command gateway is the public HTTP API for SPHEREx Sky Explorer. See docs/SPEC-gateway.md.
+// Command gateway is the public HTTP API for Planet Caravan.
 package main
 
 import (

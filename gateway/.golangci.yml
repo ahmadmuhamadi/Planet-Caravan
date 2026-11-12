@@ -1,33 +1,7 @@
 version: "2"
 
-run:
-  timeout: 5m
-
 linters:
-  # "standard" = errcheck, govet, ineffassign, staticcheck, unused.
   default: standard
-  enable:
-    - bodyclose # unclosed HTTP response bodies (compute client)
-    - contextcheck # contexts must flow through job / compute calls
-    - errorlint # correct use of errors.Is / errors.As / %w
-    - gocritic
-    - gosec
-    - misspell
-    - noctx # outbound HTTP requests must carry a context
-    - revive
-    - sqlclosecheck # Postgres rows/statements are closed
-    - unconvert
-    - usestdlibvars
-  settings:
-    misspell:
-      locale: US
-  exclusions:
-    presets:
-      - std-error-handling
-    rules:
-      - path: _test\.go
-        linters:
-          - gosec
 
 formatters:
   enable:

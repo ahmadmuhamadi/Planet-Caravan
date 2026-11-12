@@ -1,8 +1,8 @@
 <svelte:head>
-	<title>SPHEREx Sky Explorer</title>
+	<title>Planet Caravan</title>
 </svelte:head>
 
 <main>
-	<h1>SPHEREx Sky Explorer</h1>
+	<h1>Planet Caravan</h1>
 	<p>Search a target and watch its blink.</p>
 </main>

@@ -1,0 +1,66 @@
+/* Design tokens from docs/SPHEREx Sky Explorer Viewer.html; theme follows the system. */
+:root {
+	--bg: #f4f5f7;
+	--surface: #ffffff;
+	--line: #dde0e6;
+	--line2: #c9ced6;
+	--text: #1c1e21;
+	--muted: #5f6672;
+	--accent: #0b63e5;
+	--accentText: #ffffff;
+	--link: #0b63e5;
+	--linkHover: #084bb0;
+	--warnBg: #fff4d6;
+	--warnFg: #6b4a00;
+	--infoBg: #e3eeff;
+	--infoFg: #084bb0;
+	--danger: #9a3412;
+	--mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #111214;
+		--surface: #1b1c20;
+		--line: #2c2e35;
+		--line2: #41444d;
+		--text: #f2f3f5;
+		--muted: #a1a7b3;
+		--accent: #4c94ff;
+		--accentText: #04132b;
+		--link: #7db2ff;
+		--linkHover: #a9ccff;
+		--warnBg: #3a2e0a;
+		--warnFg: #ffd98a;
+		--infoBg: #12284a;
+		--infoFg: #b5d2ff;
+		--danger: #ffa57a;
+	}
+}
+
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-family:
+		-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+	font-size: 15px;
+	line-height: 1.45;
+}
+
+a {
+	color: var(--link);
+}
+a:hover {
+	color: var(--linkHover);
+}
+button,
+input {
+	font-family: inherit;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}

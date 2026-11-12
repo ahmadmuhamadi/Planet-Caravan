@@ -1,0 +1,99 @@
+# Release (H11: test, build, deploy on tag).
+#
+# Pushing a tag like v0.1.0 runs the full CI, then publishes one image per
+# component to GitHub Container Registry:
+#   ghcr.io/<owner>/planet-caravan-{gateway,compute,client}:{0.1.0, 0.1, sha-<short>}
+# Images carry an SBOM and build provenance attestation.
+#
+# Deploy: not wired yet. The hosting target (AWS or GCP) is still to be
+# decided and recorded in decisions.md (H8); add a `deploy` job that needs
+# `publish` once it is.
+#
+# The client bundle bakes in PUBLIC_GATEWAY_URL at build time; set it as a
+# repository variable (Settings → Secrets and variables → Actions → Variables).
+
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
+  publish:
+    name: Publish ${{ matrix.component }} image
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        component: [gateway, compute, client]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require PUBLIC_GATEWAY_URL for the client build
+        if: matrix.component == 'client'
+        env:
+          PUBLIC_GATEWAY_URL: ${{ vars.PUBLIC_GATEWAY_URL }}
+        run: |
+          if [ -z "$PUBLIC_GATEWAY_URL" ]; then
+            echo "::error::Repository variable PUBLIC_GATEWAY_URL is not set; the client would ship without a gateway URL."
+            exit 1
+          fi
+
+      - name: Image name (registry paths must be lowercase)
+        id: image
+        env:
+          OWNER: ${{ github.repository_owner }}
+          COMPONENT: ${{ matrix.component }}
+        run: echo "name=ghcr.io/${OWNER,,}/planet-caravan-${COMPONENT}" >> "$GITHUB_OUTPUT"
+
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+          labels: |
+            org.opencontainers.image.title=planet-caravan-${{ matrix.component }}
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.component }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ matrix.component == 'client' && format('PUBLIC_GATEWAY_URL={0}', vars.PUBLIC_GATEWAY_URL) || '' }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=${{ matrix.component }}

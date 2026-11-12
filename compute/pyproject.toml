@@ -1,0 +1,65 @@
+[project]
+name = "compute"
+version = "0.1.0"
+description = "SPHEREx Sky Explorer compute service (internal, stateless). See docs/SPEC-compute.md."
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "fastapi>=0.162.5",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.16.0",
+    "mypy>=2.4.1",
+    "pip-audit>=2.10.1",
+    "pytest>=9.2.0",
+    "ruff>=0.17.4",
+]
+
+[tool.uv]
+# This is an application, not a library: don't build/install it as a package.
+package = false
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes
+  "I",        # isort
+  "B",        # bugbear
+  "UP",       # pyupgrade
+  "S",        # bandit (security)
+  "SIM",      # simplify
+  "RUF",      # ruff-specific
+  "ASYNC",    # blocking calls inside async code (CPU work belongs in the process pool)
+  "PTH",      # pathlib over os.path
+  "DTZ",      # timezone-aware datetimes (epochs, MJD conversions)
+  "PL",       # pylint subset
+  "FAST",     # FastAPI-specific
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004"]  # asserts and magic numbers are fine in tests
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.14"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["."]
+exclude = ["^\\.venv/"]
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+# Surface deprecations immediately instead of letting them pile up.
+filterwarnings = ["error"]
+# D8: the suite must pass with no network. Tests needing live services must be
+# marked and are deselected by default in CI.
+markers = ["network: test talks to a real external service (deselected in CI)"]

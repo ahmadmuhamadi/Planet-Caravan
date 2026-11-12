@@ -1,33 +1,84 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
+# Planet-Caravan — repo-wide ignores.
+# Component-specific tooling ignores live next to the component (e.g. client/.gitignore).
+
+# ---------------------------------------------------------------- secrets (H10)
+# Never commit real config. Commit a *.example instead.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials.json
+service-account*.json
+.aws/
+.gcloud/
+
+# ---------------------------------------------------------------- OS / editors
+.DS_Store
+Thumbs.db
+*~
+*.swp
+*.swo
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# ---------------------------------------------------------------- Go (gateway)
+/gateway/bin/
+/gateway/gateway
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary, built with `go test -c`
 *.test
-
-# Code coverage profiles and other test artifacts
 *.out
+*.coverprofile
 coverage.*
 !coverage.go
-*.coverprofile
-profile.cov
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
 go.work
 go.work.sum
 
-# env file
-.env
+# ---------------------------------------------------------------- Python (compute)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.ipynb_checkpoints/
+dist/
 
-# Editor/IDE
-# .idea/
-# .vscode/
+# ---------------------------------------------------------------- Node (client)
+node_modules/
+.svelte-kit/
+/client/build/
+npm-debug.log*
+
+# ---------------------------------------------------------------- data & local state
+# Downloaded/derived astronomy data and local service state must not be committed.
+# Exception: recorded responses used by offline tests (D8) live under fixtures/.
+*.fits
+*.fits.gz
+*.fz
+*.npy
+*.npz
+/data/
+/storage/
+/minio-data/
+/pgdata/
+*.sqlite
+*.db
+!**/fixtures/**
+
+# ---------------------------------------------------------------- misc
+*.log
+.cache/
+tmp/

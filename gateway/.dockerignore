@@ -1,0 +1,10 @@
+# Keep the build context small and free of local state / secrets.
+.git
+.env
+.env.*
+*.out
+*.test
+coverage.*
+Dockerfile
+.dockerignore
+.golangci.yml

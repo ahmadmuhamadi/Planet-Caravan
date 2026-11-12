@@ -1,0 +1,10 @@
+# Keep the build context small and free of local state / secrets.
+.git
+node_modules
+.svelte-kit
+build
+.env
+.env.*
+!.env.example
+Dockerfile
+.dockerignore

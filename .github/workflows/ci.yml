@@ -9,6 +9,21 @@ on:
 jobs:
   gateway:
     runs-on: ubuntu-latest
+    # Integration tests need these; without them they skip.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: test
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 2s --health-retries 20
+      redis:
+        image: redis:8-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 2s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres?sslmode=disable
+      TEST_REDIS_URL: redis://localhost:6379/0
     defaults:
       run:
         working-directory: gateway

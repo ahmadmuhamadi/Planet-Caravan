@@ -1,0 +1,197 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Planet Caravan compute (internal)",
+    "version": "0.1.0",
+    "description": "Pinned by the gateway (B6). Draft written from CONTRACT.md 0.1 before compute Phase 1; replace with compute's published /openapi.json once it exists. Every call needs X-Internal-Secret; X-Request-ID is propagated."
+  },
+  "paths": {
+    "/internal/resolve": {
+      "post": {
+        "operationId": "resolve",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ResolveRequest"}}}},
+        "responses": {
+          "200": {"description": "Resolved", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ResolveResponse"}}}},
+          "404": {"description": "Name not found", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorBody"}}}}
+        }
+      }
+    },
+    "/internal/coverage": {
+      "post": {
+        "operationId": "coverage",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CoverageRequest"}}}},
+        "responses": {
+          "200": {"description": "Coverage, covered=false when empty", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CoverageResponse"}}}}
+        }
+      }
+    },
+    "/internal/process": {
+      "post": {
+        "operationId": "process",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProcessRequest"}}}},
+        "responses": {
+          "200": {"description": "Rendered view; frame PNGs written under output_prefix", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProcessResponse"}}}},
+          "422": {"description": "Cannot build the view", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorBody"}}}}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ResolveRequest": {
+        "type": "object",
+        "properties": {"name": {"type": "string"}},
+        "required": ["name"]
+      },
+      "ResolveResponse": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string"},
+          "ra": {"type": "number"},
+          "dec": {"type": "number"},
+          "pm": {"anyOf": [{"$ref": "#/components/schemas/ProperMotion"}, {"type": "null"}]},
+          "parallax": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+          "type": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+          "links": {"type": "array", "items": {"$ref": "#/components/schemas/Link"}}
+        },
+        "required": ["name", "ra", "dec", "pm", "parallax", "type", "links"]
+      },
+      "ProperMotion": {
+        "type": "object",
+        "properties": {"pmra": {"type": "number"}, "pmdec": {"type": "number"}},
+        "required": ["pmra", "pmdec"]
+      },
+      "Link": {
+        "type": "object",
+        "properties": {"name": {"type": "string"}, "url": {"type": "string"}},
+        "required": ["name", "url"]
+      },
+      "CoverageRequest": {
+        "type": "object",
+        "properties": {"ra": {"type": "number"}, "dec": {"type": "number"}},
+        "required": ["ra", "dec"]
+      },
+      "CoverageResponse": {
+        "type": "object",
+        "properties": {
+          "covered": {"type": "boolean"},
+          "epochs": {"type": "array", "items": {"$ref": "#/components/schemas/Epoch"}},
+          "releases": {"type": "array", "items": {"$ref": "#/components/schemas/Release"}}
+        },
+        "required": ["covered", "epochs", "releases"]
+      },
+      "Epoch": {
+        "type": "object",
+        "properties": {
+          "index": {"type": "integer"},
+          "date": {"type": "string"},
+          "mjd": {"type": "number"},
+          "detectors": {"type": "array", "items": {"type": "integer"}}
+        },
+        "required": ["index", "date", "mjd", "detectors"]
+      },
+      "Release": {
+        "type": "object",
+        "properties": {"name": {"type": "string"}, "collection": {"type": "string"}},
+        "required": ["name", "collection"]
+      },
+      "ProcessRequest": {
+        "type": "object",
+        "properties": {
+          "params": {"$ref": "#/components/schemas/ViewParams"},
+          "output_prefix": {"type": "string"},
+          "callback_url": {"type": "string"}
+        },
+        "required": ["params", "output_prefix"]
+      },
+      "ViewParams": {
+        "type": "object",
+        "properties": {
+          "target": {"$ref": "#/components/schemas/Target"},
+          "fov_arcmin": {"type": "number", "minimum": 1, "maximum": 30},
+          "mode": {"type": "string", "enum": ["blink", "difference"]},
+          "detectors": {"type": "array", "items": {"type": "integer", "minimum": 1, "maximum": 6}},
+          "epochs": {"$ref": "#/components/schemas/DateRange"},
+          "difference": {"$ref": "#/components/schemas/Difference"},
+          "tracking": {"type": "boolean"},
+          "stretch": {"$ref": "#/components/schemas/Stretch"},
+          "analysis": {"$ref": "#/components/schemas/Analysis"},
+          "collections": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["target", "fov_arcmin", "mode", "detectors", "tracking", "analysis", "collections"]
+      },
+      "Target": {
+        "type": "object",
+        "properties": {"ra": {"type": "number"}, "dec": {"type": "number"}, "name": {"type": "string"}},
+        "required": ["ra", "dec"]
+      },
+      "DateRange": {
+        "type": "object",
+        "properties": {"from": {"type": "string", "format": "date"}, "to": {"type": "string", "format": "date"}}
+      },
+      "Difference": {
+        "type": "object",
+        "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
+        "required": ["a", "b"]
+      },
+      "Stretch": {
+        "type": "object",
+        "properties": {
+          "type": {"type": "string", "enum": ["asinh", "log"]},
+          "pmin": {"type": "number"},
+          "pmax": {"type": "number"}
+        },
+        "required": ["type", "pmin", "pmax"]
+      },
+      "Analysis": {
+        "type": "object",
+        "properties": {"sources": {"type": "boolean"}, "crossmatch": {"type": "boolean"}, "sso_check": {"type": "boolean"}},
+        "required": ["sources", "crossmatch", "sso_check"]
+      },
+      "ProcessResponse": {
+        "type": "object",
+        "properties": {
+          "epochs": {"type": "array", "items": {"$ref": "#/components/schemas/Epoch"}},
+          "frames": {"type": "array", "items": {"$ref": "#/components/schemas/Frame"}},
+          "stretch": {"$ref": "#/components/schemas/Stretch"},
+          "warnings": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["epochs", "frames", "stretch", "warnings"]
+      },
+      "Frame": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "epoch_index": {"type": "integer"},
+          "date": {"type": "string"},
+          "mjd": {"type": "number"},
+          "detector": {"type": "integer"},
+          "wavelength_min_um": {"type": "number"},
+          "wavelength_max_um": {"type": "number"},
+          "center_ra": {"type": "number"},
+          "center_dec": {"type": "number"},
+          "pixel_scale_arcsec": {"type": "number"},
+          "width": {"type": "integer"},
+          "height": {"type": "integer"},
+          "orientation_deg": {"type": "number"},
+          "alignment_residual_arcsec": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+          "warnings": {"type": "array", "items": {"type": "string"}},
+          "object_key": {"type": "string"}
+        },
+        "required": ["id", "epoch_index", "date", "mjd", "detector", "wavelength_min_um", "wavelength_max_um",
+          "center_ra", "center_dec", "pixel_scale_arcsec", "width", "height", "orientation_deg",
+          "alignment_residual_arcsec", "warnings", "object_key"]
+      },
+      "ErrorBody": {
+        "type": "object",
+        "properties": {"error": {"$ref": "#/components/schemas/ErrorDetail"}},
+        "required": ["error"]
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object"}},
+        "required": ["code", "message", "details"]
+      }
+    }
+  }
+}

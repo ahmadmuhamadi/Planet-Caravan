@@ -27,3 +27,6 @@ node_modules/
 # Data (test fixtures are kept)
 *.fits
 !**/fixtures/**
+
+# Local cutout cache
+compute/.cache/

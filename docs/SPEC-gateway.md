@@ -11,7 +11,7 @@ Layout: cmd/, internal/{api,jobs,cache,store,compute_client}, migrations/
 
 ## Phase 1 — core
 API (shapes in CONTRACT.md)
-- /resolve, /autocomplete, /coverage, POST /views, GET /views (query params), /jobs/{id}, /views/{id}, frames .png, /healthz, /readyz, /metrics
+- /resolve, /autocomplete, /coverage, POST /views, GET /views (query params), /jobs/{id}, /views/{id}, /healthz, /readyz, /metrics
 - B13: every error uses the CONTRACT error format
 - B9: no coverage → 200 with covered:false, not an error
 Jobs
@@ -20,7 +20,7 @@ Jobs
 - B4: identical requests while a job runs share that job (singleflight on cache key)
 Cache
 - B5: cache key per CONTRACT (coords rounded to 0.1 arcsec, fov, mode, options, release set)
-- Redis for JSON/metadata, object storage for images
+- Redis for JSON/metadata. Frame images stay in object storage; views return their public URL (FRAMES_BASE_URL + object key) and the gateway never serves image bytes
 - TTLs (config): resolved names 30 days; coverage 6 h; views until a new release covers the position
 Compute client
 - B6: types generated from pinned compute OpenAPI schema, or a contract test fails the build on mismatch

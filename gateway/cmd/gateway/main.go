@@ -51,11 +51,6 @@ func run() error {
 	rdb := redis.NewClient(redisOpts)
 	defer func() { _ = rdb.Close() }()
 
-	blobs, err := store.NewS3(cfg.S3Endpoint, cfg.S3Region, cfg.S3Bucket, cfg.S3AccessKey, cfg.S3SecretKey)
-	if err != nil {
-		return err
-	}
-
 	compute := computeclient.New(cfg.ComputeURL, cfg.ComputeSecret, cfg.ComputeTimeout, cfg.ComputeRetries)
 	runner := jobs.NewRunner(db, compute, cfg.JobTimeout, cfg.CallbackBaseURL, log)
 
@@ -66,13 +61,14 @@ func run() error {
 		TrustedProxies: cfg.TrustedProxies,
 		MaxBodyBytes:   cfg.MaxBodyBytes,
 		ComputeSecret:  cfg.ComputeSecret,
+		FramesBaseURL:  cfg.FramesBaseURL,
 		RatePerSecond:  cfg.RatePerSecond,
 		RateBurst:      cfg.RateBurst,
 		JobsPerMinute:  cfg.JobsPerMinute,
 		JobBurst:       cfg.JobBurst,
 		MaxJobsPerIP:   cfg.MaxJobsPerIP,
 	}, api.Deps{
-		Store: db, Blobs: blobs, Cache: &cache.Redis{Client: rdb, Log: log}, Compute: compute, Jobs: runner, Log: log,
+		Store: db, Cache: &cache.Redis{Client: rdb, Log: log}, Compute: compute, Jobs: runner, Log: log,
 	})
 	if err != nil {
 		return err

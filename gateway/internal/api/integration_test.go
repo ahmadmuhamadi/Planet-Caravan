@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -100,25 +99,11 @@ func writeView(w http.ResponseWriter, req computeclient.ProcessRequest) {
 	_ = json.NewEncoder(w).Encode(res)
 }
 
-type memBlobs struct{ objects sync.Map }
-
-func (m *memBlobs) Open(_ context.Context, key string) (io.ReadCloser, int64, error) {
-	v, ok := m.objects.Load(key)
-	if !ok {
-		return nil, 0, store.ErrNotFound
-	}
-	b := v.([]byte)
-	return io.NopCloser(strings.NewReader(string(b))), int64(len(b)), nil
-}
-
-func (m *memBlobs) Ping(context.Context) error { return nil }
-
 type env struct {
 	router  http.Handler
 	compute *stubCompute
 	srv     *httptest.Server
 	store   *store.Store
-	blobs   *memBlobs
 	runner  *jobs.Runner
 }
 
@@ -148,8 +133,7 @@ func newEnv(t *testing.T, cfg Config, jobTimeout time.Duration) *env {
 	srv := httptest.NewServer(stub)
 	compute := computeclient.New(srv.URL, "s3cret", time.Second, 1)
 	runner := jobs.NewRunner(db, compute, jobTimeout, "http://gateway.internal", quiet)
-	blobs := &memBlobs{}
-	r, err := New(cfg, Deps{Store: db, Blobs: blobs, Cache: &cache.Redis{Client: rdb, Log: quiet}, Compute: compute, Jobs: runner, Log: quiet})
+	r, err := New(cfg, Deps{Store: db, Cache: &cache.Redis{Client: rdb, Log: quiet}, Compute: compute, Jobs: runner, Log: quiet})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +143,7 @@ func newEnv(t *testing.T, cfg Config, jobTimeout time.Duration) *env {
 		_ = rdb.Close()
 		db.Close()
 	})
-	return &env{router: r, compute: stub, srv: srv, store: db, blobs: blobs, runner: runner}
+	return &env{router: r, compute: stub, srv: srv, store: db, runner: runner}
 }
 
 func decode[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
@@ -244,19 +228,14 @@ func TestViewLifecycle(t *testing.T) {
 		}
 	}
 
-	// Frame PNG comes from object storage.
-	png := []byte("\x89PNG fake")
-	e.blobs.objects.Store(pr.OutputPrefix+"e0-d1.png", png)
-	rec = do(t, e.router, "GET", "/api/v1/views/"+v.ID+"/frames/e0-d1.png", "")
-	if rec.Code != 200 || rec.Body.String() != string(png) || rec.Header().Get("Content-Type") != "image/png" {
-		t.Fatalf("frame = %d %q %v", rec.Code, rec.Body, rec.Header())
+	// Frames carry a direct URL to their image; the gateway never serves image bytes.
+	if want := "https://frames.example/" + pr.OutputPrefix + "e0-d1.png"; v.Frames[0].URL != want {
+		t.Errorf("frame url = %q, want %q", v.Frames[0].URL, want)
 	}
 	for path, code := range map[string]int{
-		"/api/v1/views/" + v.ID + "/frames/e0-d2.png":                         404,
-		"/api/v1/views/" + v.ID + "/frames/e0-d1":                             404,
-		"/api/v1/views/00000000-0000-0000-0000-000000000000/frames/e0-d1.png": 404,
-		"/api/v1/views/not-a-uuid":                                            404,
-		"/api/v1/jobs/not-a-uuid":                                             404,
+		"/api/v1/views/" + v.ID + "/frames/e0-d1.png": 404,
+		"/api/v1/views/not-a-uuid":                    404,
+		"/api/v1/jobs/not-a-uuid":                     404,
 	} {
 		if rec := do(t, e.router, "GET", path, ""); rec.Code != code || errorCode(t, rec) != "not_found" {
 			t.Errorf("GET %s = %d", path, rec.Code)
@@ -286,9 +265,6 @@ func TestViewLifecycle(t *testing.T) {
 	e.srv.Close()
 	if rec := do(t, e.router, "POST", "/api/v1/views", barnard); rec.Code != 200 {
 		t.Fatalf("POST with compute down = %d %s", rec.Code, rec.Body)
-	}
-	if rec := do(t, e.router, "GET", "/api/v1/views/"+v.ID+"/frames/e0-d1.png", ""); rec.Code != 200 {
-		t.Fatalf("frame with compute down = %d", rec.Code)
 	}
 }
 

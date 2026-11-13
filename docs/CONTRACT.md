@@ -6,7 +6,10 @@ Version: 0.1
 ## Flow
 client → gateway (public, Go/Gin) → compute (private, Python/FastAPI)
 - Client calls gateway only. Compute is never public.
-- Gateway owns state (Postgres, Redis, object storage). Compute is stateless.
+- Gateway owns state (Postgres, Redis). Compute is stateless.
+- Images never pass through the gateway: compute writes frame PNGs to object storage,
+  the gateway returns each frame's public `url`, and the client loads it directly
+  (from storage or a CDN in front of it).
 
 ## Terms
 - target: ICRS RA/Dec in degrees, optional proper motion + reference epoch
@@ -26,7 +29,6 @@ Phase 1
 - GET /views?ra=&dec=&fov=&mode= → same cache key as POST /views
 - GET /jobs/{id} → status (queued|running|done|failed), progress 0-100, result or error
 - GET /views/{id} → epochs, frames, stretch, release_set, newer_data_available, warnings
-- GET /views/{id}/frames/{frame_id}.png
 - GET /healthz, /readyz, /metrics
 Phase 2
 - GET /views/{id}/blink.gif (Should)
@@ -52,7 +54,7 @@ Error (every non-2xx): {error: {code, message, details}}
 
 Frame: id, epoch_index, date, mjd, detector, wavelength_min_um, wavelength_max_um,
 center_ra, center_dec, pixel_scale_arcsec, width, height, orientation_deg,
-alignment_residual_arcsec, warnings[]
+alignment_residual_arcsec, warnings[], url (public PNG URL)
 
 Source: id, ra, dec, type, catalog_ids, links[], is_candidate,
 pixel_positions[{frame_id, x, y}], motion{value, direction, uncertainty, detected}, warnings[]

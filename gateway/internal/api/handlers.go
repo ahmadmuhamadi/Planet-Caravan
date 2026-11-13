@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -236,7 +237,7 @@ func (s *server) serveCachedView(c *gin.Context, key string) bool {
 	cache.Hit("view", err == nil)
 	switch {
 	case err == nil:
-		c.JSON(http.StatusOK, viewJSON(v))
+		c.JSON(http.StatusOK, s.viewJSON(v))
 		return true
 	case !errors.Is(err, store.ErrNotFound):
 		s.internalError(c, "find view", err)
@@ -275,7 +276,7 @@ func (s *server) findView(c *gin.Context) {
 func (s *server) getView(c *gin.Context) {
 	v, ok := s.viewByID(c)
 	if ok {
-		c.JSON(http.StatusOK, viewJSON(v))
+		c.JSON(http.StatusOK, s.viewJSON(v))
 	}
 }
 
@@ -294,59 +295,38 @@ func (s *server) viewByID(c *gin.Context) (*store.View, bool) {
 
 // view is the public view shape. Phase 2 adds release_set and newer_data_available (B10).
 type view struct {
-	ID        string                    `json:"id"`
-	Target    computeclient.Target      `json:"target"`
-	FOVArcmin float64                   `json:"fov_arcmin"`
-	Mode      string                    `json:"mode"`
-	Epochs    []computeclient.Epoch     `json:"epochs"`
-	Frames    []computeclient.FrameInfo `json:"frames"`
-	Stretch   computeclient.Stretch     `json:"stretch"`
-	Warnings  []string                  `json:"warnings"`
-	CreatedAt time.Time                 `json:"created_at"`
+	ID        string                `json:"id"`
+	Target    computeclient.Target  `json:"target"`
+	FOVArcmin float64               `json:"fov_arcmin"`
+	Mode      string                `json:"mode"`
+	Epochs    []computeclient.Epoch `json:"epochs"`
+	Frames    []frame               `json:"frames"`
+	Stretch   computeclient.Stretch `json:"stretch"`
+	Warnings  []string              `json:"warnings"`
+	CreatedAt time.Time             `json:"created_at"`
 }
 
-func viewJSON(v *store.View) view {
-	frames := make([]computeclient.FrameInfo, len(v.Frames))
+// frame is the CONTRACT Frame plus the public URL of its PNG. The client loads
+// images straight from object storage (or a CDN in front of it), never through
+// the gateway.
+type frame struct {
+	computeclient.FrameInfo
+	URL string `json:"url"`
+}
+
+func (s *server) viewJSON(v *store.View) view {
+	frames := make([]frame, len(v.Frames))
 	for i, f := range v.Frames {
-		frames[i] = f.FrameInfo
+		u, err := url.JoinPath(s.cfg.FramesBaseURL, f.ObjectKey)
+		if err != nil {
+			u = "" // FramesBaseURL is checked at startup; this cannot happen
+		}
+		frames[i] = frame{FrameInfo: f.FrameInfo, URL: u}
 	}
 	return view{
 		ID: v.ID, Target: v.Target, FOVArcmin: v.Params.FOVArcmin, Mode: v.Params.Mode,
 		Epochs: v.Epochs, Frames: frames, Stretch: v.Stretch, Warnings: v.Warnings, CreatedAt: v.CreatedAt,
 	}
-}
-
-// GET /views/{id}/frames/{frame_id}.png, streamed from object storage.
-func (s *server) getFrame(c *gin.Context) {
-	frameID, ok := strings.CutSuffix(c.Param("file"), ".png")
-	if !ok {
-		fail(c, notFound("Frames are served as {frame_id}.png."))
-		return
-	}
-	v, ok := s.viewByID(c)
-	if !ok {
-		return
-	}
-	i := slices.IndexFunc(v.Frames, func(f computeclient.Frame) bool { return f.ID == frameID })
-	if i < 0 {
-		fail(c, notFound("No frame with this id in this view."))
-		return
-	}
-	obj, size, err := s.Blobs.Open(c.Request.Context(), v.Frames[i].ObjectKey)
-	if errors.Is(err, store.ErrNotFound) {
-		s.Log.WarnContext(c, "frame image missing", "view_id", v.ID, "key", v.Frames[i].ObjectKey, "request_id", reqID(c))
-		fail(c, notFound("This frame's image is no longer stored."))
-		return
-	}
-	if err != nil {
-		s.internalError(c, "open frame", err)
-		return
-	}
-	defer func() { _ = obj.Close() }()
-	// A view id and frame id never change what they point to.
-	c.DataFromReader(http.StatusOK, size, "image/png", obj, map[string]string{
-		"Cache-Control": "public, max-age=31536000, immutable",
-	})
 }
 
 // GET /jobs/{id} → status, progress, and the view or the error.
@@ -375,7 +355,7 @@ func (s *server) getJob(c *gin.Context) {
 			s.internalError(c, "get job view", err)
 			return
 		}
-		out["result"] = viewJSON(v)
+		out["result"] = s.viewJSON(v)
 	case store.StatusFailed:
 		out["error"] = job.Error
 	}
@@ -406,15 +386,14 @@ func (s *server) jobProgress(c *gin.Context) {
 	}
 }
 
-// GET /readyz checks Postgres, Redis and object storage.
+// GET /readyz checks Postgres and Redis.
 func (s *server) readyz(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 	defer cancel()
 	failed := map[string]any{}
 	for name, ping := range map[string]func(context.Context) error{
-		"postgres":       s.Store.Ping,
-		"redis":          func(ctx context.Context) error { return s.Cache.Client.Ping(ctx).Err() },
-		"object_storage": s.Blobs.Ping,
+		"postgres": s.Store.Ping,
+		"redis":    func(ctx context.Context) error { return s.Cache.Client.Ping(ctx).Err() },
 	} {
 		if err := ping(ctx); err != nil {
 			s.Log.ErrorContext(ctx, "not ready", "dependency", name, "err", err)

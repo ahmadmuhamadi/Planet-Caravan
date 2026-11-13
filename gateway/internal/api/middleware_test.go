@@ -23,6 +23,7 @@ var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
 func testConfig() Config {
 	return Config{
 		ResolveTTL: time.Hour, CoverageTTL: time.Hour, MaxBodyBytes: 1 << 10, ComputeSecret: "s3cret",
+		FramesBaseURL: "https://frames.example",
 		CORSOrigins:   []string{"https://planet-caravan.example"},
 		RatePerSecond: 100, RateBurst: 100, JobsPerMinute: 600, JobBurst: 100, MaxJobsPerIP: 10,
 	}

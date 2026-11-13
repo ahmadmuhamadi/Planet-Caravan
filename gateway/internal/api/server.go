@@ -25,6 +25,7 @@ type Config struct {
 	TrustedProxies []string // empty: use the connection address as the client IP
 	MaxBodyBytes   int64
 	ComputeSecret  string // also guards the progress callback
+	FramesBaseURL  string // public base URL of the frame images (object storage or CDN)
 
 	RatePerSecond float64 // all API requests, per IP
 	RateBurst     int
@@ -36,7 +37,6 @@ type Config struct {
 // Deps are the services the API uses.
 type Deps struct {
 	Store   *store.Store
-	Blobs   store.Blobs
 	Cache   *cache.Redis
 	Compute *computeclient.Client
 	Jobs    *jobs.Runner
@@ -92,7 +92,6 @@ func New(cfg Config, d Deps) (*gin.Engine, error) {
 	pub.POST("/views", s.createView)
 	pub.GET("/views", s.findView)
 	pub.GET("/views/:id", s.getView)
-	pub.GET("/views/:id/frames/:file", s.getFrame)
 	pub.GET("/jobs/:id", s.getJob)
 
 	// Compute reports job progress here (CONTRACT: callback URL).

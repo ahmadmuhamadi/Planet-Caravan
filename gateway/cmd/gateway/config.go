@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -17,11 +18,7 @@ type config struct {
 	DatabaseURL string
 	RedisURL    string
 
-	S3Endpoint  string
-	S3Region    string
-	S3Bucket    string
-	S3AccessKey string
-	S3SecretKey string
+	FramesBaseURL string // public URL of the frame images; the client loads them directly
 
 	ComputeURL      string
 	ComputeSecret   string
@@ -53,11 +50,7 @@ func loadConfig() (config, error) {
 		DatabaseURL: e.required("DATABASE_URL"),
 		RedisURL:    e.required("REDIS_URL"),
 
-		S3Endpoint:  e.required("S3_ENDPOINT"),
-		S3Region:    e.str("S3_REGION", "us-east-1"),
-		S3Bucket:    e.required("S3_BUCKET"),
-		S3AccessKey: e.required("S3_ACCESS_KEY"),
-		S3SecretKey: e.required("S3_SECRET_KEY"),
+		FramesBaseURL: e.url("FRAMES_BASE_URL"),
 
 		ComputeURL:      strings.TrimRight(e.required("COMPUTE_URL"), "/"),
 		ComputeSecret:   e.required("COMPUTE_SECRET"),
@@ -100,6 +93,15 @@ func (e *env) required(key string) string {
 	v := os.Getenv(key)
 	if v == "" {
 		e.errs = append(e.errs, fmt.Errorf("%s is required", key))
+	}
+	return v
+}
+
+// url reads a required absolute http(s) URL.
+func (e *env) url(key string) string {
+	v := e.required(key)
+	if u, err := url.Parse(v); v != "" && (err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "") {
+		e.errs = append(e.errs, fmt.Errorf("%s must be an http(s) URL", key))
 	}
 	return v
 }

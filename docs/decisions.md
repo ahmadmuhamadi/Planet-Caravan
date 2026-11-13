@@ -36,3 +36,13 @@ parallel downloads and 6–16 s per cutout, a cold view takes about 5–13 min, 
 the 5-minute job limit (B3). Mitigations already in the spec: D5 cutout cache
 and B11 pre-computed featured targets. Requests can also be narrowed with the
 `detectors` and `epochs` options. To revisit after Phase 1 timing.
+
+## Frame images are served directly from storage (2026-11-13)
+
+The gateway used to stream every frame PNG from object storage to the client.
+Now each frame in a view carries a public `url` (`FRAMES_BASE_URL` + object key)
+and the client loads it straight from storage or a CDN. The gateway no longer
+reads object storage or holds its credentials; only compute writes to it.
+`GET /views/{id}/frames/{frame_id}.png` is removed from the contract.
+Object keys never change what they point to, so these URLs can be cached forever.
+Deploy needs: public read on the `views/` prefix (or a CDN with access to it).

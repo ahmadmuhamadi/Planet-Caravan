@@ -54,19 +54,20 @@ func run() error {
 	compute := computeclient.New(cfg.ComputeURL, cfg.ComputeSecret, cfg.ComputeTimeout, cfg.ComputeRetries)
 	runner := jobs.NewRunner(db, compute, cfg.JobTimeout, cfg.CallbackBaseURL, log)
 
-	router, err := api.New(api.Config{
-		ResolveTTL:     cfg.ResolveTTL,
-		CoverageTTL:    cfg.CoverageTTL,
-		CORSOrigins:    cfg.CORSOrigins,
-		TrustedProxies: cfg.TrustedProxies,
-		MaxBodyBytes:   cfg.MaxBodyBytes,
-		ComputeSecret:  cfg.ComputeSecret,
-		FramesBaseURL:  cfg.FramesBaseURL,
-		RatePerSecond:  cfg.RatePerSecond,
-		RateBurst:      cfg.RateBurst,
-		JobsPerMinute:  cfg.JobsPerMinute,
-		JobBurst:       cfg.JobBurst,
-		MaxJobsPerIP:   cfg.MaxJobsPerIP,
+	gateway, err := api.New(api.Config{
+		ResolveTTL:       cfg.ResolveTTL,
+		CoverageTTL:      cfg.CoverageTTL,
+		StaleCoverageTTL: cfg.StaleCoverageTTL,
+		CORSOrigins:      cfg.CORSOrigins,
+		TrustedProxies:   cfg.TrustedProxies,
+		MaxBodyBytes:     cfg.MaxBodyBytes,
+		ComputeSecret:    cfg.ComputeSecret,
+		FramesBaseURL:    cfg.FramesBaseURL,
+		RatePerSecond:    cfg.RatePerSecond,
+		RateBurst:        cfg.RateBurst,
+		JobsPerMinute:    cfg.JobsPerMinute,
+		JobBurst:         cfg.JobBurst,
+		MaxJobsPerIP:     cfg.MaxJobsPerIP,
 	}, api.Deps{
 		Store: db, Cache: &cache.Redis{Client: rdb, Log: log}, Compute: compute, Jobs: runner, Log: log,
 	})
@@ -76,7 +77,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           router,
+		Handler:           gateway,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -85,6 +86,12 @@ func run() error {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.ListenAndServe() }()
 	log.Info("gateway listening", "addr", cfg.Addr)
+
+	featuredDone := make(chan struct{})
+	go func() {
+		defer close(featuredDone)
+		gateway.KeepFeaturedFresh(ctx, cfg.FeaturedRefresh)
+	}()
 
 	select {
 	case err := <-serveErr:
@@ -95,7 +102,13 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	err = srv.Shutdown(shutdownCtx)
-	return errors.Join(err, runner.Shutdown(shutdownCtx))
+	err = errors.Join(err, runner.Shutdown(shutdownCtx)) // also cancels a featured job in progress
+	select {
+	case <-featuredDone:
+	case <-shutdownCtx.Done():
+		err = errors.Join(err, shutdownCtx.Err())
+	}
+	return err
 }
 
 func logLevel(s string) slog.Level {

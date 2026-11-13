@@ -1,0 +1,414 @@
+{
+	"openapi": "3.1.0",
+	"info": {
+		"title": "Planet Caravan gateway (public)",
+		"version": "0.1.0",
+		"description": "Pinned by the client (H2). Written from CONTRACT.md 0.1 and the gateway's Phase 1 handlers, covering the endpoints the client calls. Replace with the gateway's published schema once it exists. After editing, run `npm run gen:api`."
+	},
+	"servers": [{ "url": "/api/v1" }],
+	"paths": {
+		"/resolve": {
+			"get": {
+				"operationId": "resolve",
+				"parameters": [
+					{ "name": "name", "in": "query", "required": true, "schema": { "type": "string" } }
+				],
+				"responses": {
+					"200": { "$ref": "#/components/responses/Resolved" },
+					"default": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/autocomplete": {
+			"get": {
+				"operationId": "autocomplete",
+				"parameters": [{ "name": "q", "in": "query", "schema": { "type": "string" } }],
+				"responses": {
+					"200": {
+						"description": "Featured targets matching q; all of them when q is empty.",
+						"content": {
+							"application/json": {
+								"schema": {
+									"type": "object",
+									"required": ["suggestions"],
+									"properties": {
+										"suggestions": {
+											"type": "array",
+											"items": { "$ref": "#/components/schemas/Suggestion" }
+										}
+									}
+								}
+							}
+						}
+					},
+					"default": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/objects/{slug}": {
+			"get": {
+				"operationId": "getObject",
+				"description": "Gateway Phase 2 (B8). The contract says only \"target for a featured slug\"; the shape below is the client's assumption until it is pinned.",
+				"parameters": [
+					{ "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }
+				],
+				"responses": {
+					"200": {
+						"description": "The featured target.",
+						"content": {
+							"application/json": { "schema": { "$ref": "#/components/schemas/FeaturedTarget" } }
+						}
+					},
+					"default": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/coverage": {
+			"get": {
+				"operationId": "coverage",
+				"parameters": [
+					{ "name": "ra", "in": "query", "required": true, "schema": { "type": "number" } },
+					{ "name": "dec", "in": "query", "required": true, "schema": { "type": "number" } }
+				],
+				"responses": {
+					"200": {
+						"description": "Coverage at the position. No coverage is covered:false, not an error (B9).",
+						"content": {
+							"application/json": { "schema": { "$ref": "#/components/schemas/Coverage" } }
+						}
+					},
+					"default": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/views": {
+			"post": {
+				"operationId": "createView",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": { "schema": { "$ref": "#/components/schemas/ViewRequest" } }
+					}
+				},
+				"responses": {
+					"200": { "$ref": "#/components/responses/View" },
+					"202": {
+						"description": "The view is being built.",
+						"content": {
+							"application/json": { "schema": { "$ref": "#/components/schemas/JobAccepted" } }
+						}
+					},
+					"default": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/views/{id}": {
+			"get": {
+				"operationId": "getView",
+				"parameters": [
+					{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+				],
+				"responses": {
+					"200": { "$ref": "#/components/responses/View" },
+					"default": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/jobs/{id}": {
+			"get": {
+				"operationId": "getJob",
+				"parameters": [
+					{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+				],
+				"responses": {
+					"200": {
+						"description": "Job status.",
+						"content": {
+							"application/json": { "schema": { "$ref": "#/components/schemas/Job" } }
+						}
+					},
+					"default": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		}
+	},
+	"components": {
+		"responses": {
+			"Resolved": {
+				"description": "A resolved object name.",
+				"content": {
+					"application/json": { "schema": { "$ref": "#/components/schemas/Resolved" } }
+				}
+			},
+			"View": {
+				"description": "A rendered view.",
+				"content": { "application/json": { "schema": { "$ref": "#/components/schemas/View" } } }
+			},
+			"Error": {
+				"description": "Every non-2xx response (B13).",
+				"content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+			}
+		},
+		"schemas": {
+			"Error": {
+				"type": "object",
+				"required": ["error"],
+				"properties": {
+					"error": {
+						"type": "object",
+						"required": ["code", "message", "details"],
+						"properties": {
+							"code": { "type": "string" },
+							"message": { "type": "string" },
+							"details": { "type": "object", "additionalProperties": true }
+						}
+					}
+				}
+			},
+			"Link": {
+				"type": "object",
+				"required": ["name", "url"],
+				"properties": { "name": { "type": "string" }, "url": { "type": "string" } }
+			},
+			"ProperMotion": {
+				"description": "mas/yr",
+				"type": "object",
+				"required": ["pmra", "pmdec"],
+				"properties": { "pmra": { "type": "number" }, "pmdec": { "type": "number" } }
+			},
+			"Resolved": {
+				"type": "object",
+				"required": ["name", "ra", "dec", "pm", "parallax", "type", "links"],
+				"properties": {
+					"name": { "type": "string" },
+					"ra": { "type": "number" },
+					"dec": { "type": "number" },
+					"pm": { "oneOf": [{ "$ref": "#/components/schemas/ProperMotion" }, { "type": "null" }] },
+					"parallax": { "type": ["number", "null"], "description": "mas" },
+					"type": { "type": ["string", "null"] },
+					"links": { "type": "array", "items": { "$ref": "#/components/schemas/Link" } }
+				}
+			},
+			"Suggestion": {
+				"type": "object",
+				"required": ["slug", "name", "type"],
+				"properties": {
+					"slug": { "type": "string" },
+					"name": { "type": "string" },
+					"type": { "type": "string" }
+				}
+			},
+			"FeaturedTarget": {
+				"type": "object",
+				"required": ["slug", "name", "type", "ra", "dec"],
+				"properties": {
+					"slug": { "type": "string" },
+					"name": { "type": "string" },
+					"type": { "type": "string" },
+					"ra": { "type": "number" },
+					"dec": { "type": "number" }
+				}
+			},
+			"Epoch": {
+				"type": "object",
+				"required": ["index", "date", "mjd", "detectors"],
+				"properties": {
+					"index": { "type": "integer" },
+					"date": { "type": "string", "format": "date" },
+					"mjd": { "type": "number" },
+					"detectors": { "type": "array", "items": { "type": "integer" } }
+				}
+			},
+			"Release": {
+				"type": "object",
+				"required": ["name", "collection"],
+				"properties": { "name": { "type": "string" }, "collection": { "type": "string" } }
+			},
+			"Coverage": {
+				"type": "object",
+				"required": ["covered", "epochs", "releases"],
+				"properties": {
+					"covered": { "type": "boolean" },
+					"epochs": { "type": "array", "items": { "$ref": "#/components/schemas/Epoch" } },
+					"releases": { "type": "array", "items": { "$ref": "#/components/schemas/Release" } }
+				}
+			},
+			"Mode": { "type": "string", "enum": ["blink", "difference"] },
+			"Warning": {
+				"description": "Fixed vocabulary (CONTRACT).",
+				"type": "string",
+				"enum": [
+					"low_alignment_quality",
+					"not_comparable",
+					"catalog_check_incomplete",
+					"saturated",
+					"upper_limit"
+				]
+			},
+			"Stretch": {
+				"type": "object",
+				"required": ["type", "pmin", "pmax"],
+				"properties": {
+					"type": { "type": "string", "enum": ["asinh", "log"] },
+					"pmin": { "type": "number" },
+					"pmax": { "type": "number" }
+				}
+			},
+			"ViewRequest": {
+				"type": "object",
+				"required": ["target"],
+				"additionalProperties": false,
+				"properties": {
+					"target": {
+						"oneOf": [
+							{
+								"type": "object",
+								"required": ["name"],
+								"additionalProperties": false,
+								"properties": { "name": { "type": "string" } }
+							},
+							{
+								"type": "object",
+								"required": ["ra", "dec"],
+								"additionalProperties": false,
+								"properties": { "ra": { "type": "number" }, "dec": { "type": "number" } }
+							}
+						]
+					},
+					"fov_arcmin": { "type": "number", "minimum": 1, "maximum": 30, "default": 3 },
+					"mode": { "$ref": "#/components/schemas/Mode" },
+					"detectors": {
+						"type": "array",
+						"items": { "type": "integer", "minimum": 1, "maximum": 6 }
+					},
+					"epochs": {
+						"type": "object",
+						"properties": {
+							"from": { "type": "string", "format": "date" },
+							"to": { "type": "string", "format": "date" }
+						}
+					},
+					"difference": {
+						"type": "object",
+						"required": ["a", "b"],
+						"properties": { "a": { "type": "integer" }, "b": { "type": "integer" } }
+					},
+					"tracking": { "type": "boolean" },
+					"stretch": { "$ref": "#/components/schemas/Stretch" },
+					"analysis": {
+						"type": "object",
+						"properties": {
+							"sources": { "type": "boolean" },
+							"crossmatch": { "type": "boolean" },
+							"sso_check": { "type": "boolean" }
+						}
+					}
+				}
+			},
+			"Frame": {
+				"type": "object",
+				"required": [
+					"id",
+					"epoch_index",
+					"date",
+					"mjd",
+					"detector",
+					"wavelength_min_um",
+					"wavelength_max_um",
+					"center_ra",
+					"center_dec",
+					"pixel_scale_arcsec",
+					"width",
+					"height",
+					"orientation_deg",
+					"alignment_residual_arcsec",
+					"warnings",
+					"url"
+				],
+				"properties": {
+					"id": { "type": "string" },
+					"epoch_index": { "type": "integer" },
+					"date": { "type": "string", "format": "date" },
+					"mjd": { "type": "number" },
+					"detector": { "type": "integer", "minimum": 1, "maximum": 6 },
+					"wavelength_min_um": { "type": "number" },
+					"wavelength_max_um": { "type": "number" },
+					"center_ra": { "type": "number" },
+					"center_dec": { "type": "number" },
+					"pixel_scale_arcsec": { "type": "number" },
+					"width": { "type": "integer" },
+					"height": { "type": "integer" },
+					"orientation_deg": { "type": "number" },
+					"alignment_residual_arcsec": {
+						"type": ["number", "null"],
+						"description": "null when not measured"
+					},
+					"warnings": { "type": "array", "items": { "$ref": "#/components/schemas/Warning" } },
+					"url": { "type": "string", "description": "Public PNG URL (object storage or CDN)." }
+				}
+			},
+			"View": {
+				"type": "object",
+				"required": [
+					"id",
+					"target",
+					"fov_arcmin",
+					"mode",
+					"epochs",
+					"frames",
+					"stretch",
+					"warnings",
+					"created_at"
+				],
+				"properties": {
+					"id": { "type": "string" },
+					"target": {
+						"type": "object",
+						"required": ["ra", "dec"],
+						"properties": {
+							"ra": { "type": "number" },
+							"dec": { "type": "number" },
+							"name": { "type": "string" }
+						}
+					},
+					"fov_arcmin": { "type": "number" },
+					"mode": { "$ref": "#/components/schemas/Mode" },
+					"epochs": { "type": "array", "items": { "$ref": "#/components/schemas/Epoch" } },
+					"frames": { "type": "array", "items": { "$ref": "#/components/schemas/Frame" } },
+					"stretch": { "$ref": "#/components/schemas/Stretch" },
+					"warnings": { "type": "array", "items": { "$ref": "#/components/schemas/Warning" } },
+					"created_at": { "type": "string", "format": "date-time" },
+					"release_set": {
+						"description": "Gateway Phase 2 (B10); optional until the gateway sends it.",
+						"type": "array",
+						"items": { "$ref": "#/components/schemas/Release" }
+					},
+					"newer_data_available": {
+						"description": "Gateway Phase 2 (B10); optional until the gateway sends it.",
+						"type": "boolean"
+					}
+				}
+			},
+			"JobAccepted": {
+				"type": "object",
+				"required": ["job_id", "status_url"],
+				"properties": { "job_id": { "type": "string" }, "status_url": { "type": "string" } }
+			},
+			"Job": {
+				"type": "object",
+				"required": ["id", "status", "progress"],
+				"properties": {
+					"id": { "type": "string" },
+					"status": { "type": "string", "enum": ["queued", "running", "done", "failed"] },
+					"progress": { "type": "integer", "minimum": 0, "maximum": 100 },
+					"result": { "$ref": "#/components/schemas/View" },
+					"error": {
+						"type": "object",
+						"required": ["code", "message"],
+						"properties": { "code": { "type": "string" }, "message": { "type": "string" } }
+					}
+				}
+			}
+		}
+	}
+}

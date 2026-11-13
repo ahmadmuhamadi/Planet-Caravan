@@ -29,13 +29,17 @@ var validRequestID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 func requestID(c *gin.Context) {
 	id := c.GetHeader("X-Request-ID")
 	if !validRequestID.MatchString(id) {
-		b := make([]byte, 16)
-		_, _ = rand.Read(b)
-		id = hex.EncodeToString(b)
+		id = newRequestID()
 	}
 	c.Header("X-Request-ID", id)
 	c.Request = c.Request.WithContext(computeclient.WithRequestID(c.Request.Context(), id))
 	c.Next()
+}
+
+func newRequestID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 func reqID(c *gin.Context) string { return computeclient.RequestID(c.Request.Context()) }

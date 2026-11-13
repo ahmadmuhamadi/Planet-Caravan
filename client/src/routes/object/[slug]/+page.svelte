@@ -1,12 +1,13 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import Viewer from '#lib/viewer/Viewer.svelte';
+	import { parseViewState } from '#lib/view-url.js';
 	import type { PageProps } from './$types';
 
 	let { params }: PageProps = $props();
 </script>
 
-<!-- Placeholder: the viewer (F2–F4, F7) replaces this page. -->
-<main style="padding: 24px">
-	<p>Viewer for <code>{params.slug}</code> is not built yet.</p>
-	<a href={resolve('/')}>Back to search</a>
-</main>
+<!-- page.url changes on real navigations only, so each one opens a fresh viewer. -->
+{#key page.url.href}
+	<Viewer target={{ slug: params.slug }} initial={parseViewState(page.url.searchParams)} />
+{/key}

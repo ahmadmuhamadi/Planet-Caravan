@@ -2,6 +2,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -242,6 +243,31 @@ func (s *Store) AddReleases(ctx context.Context, rs []computeclient.Release) err
 		}
 	}
 	return nil
+}
+
+// Releases returns the releases for collections, in the same order. A collection
+// not recorded yet is named after itself.
+func (s *Store) Releases(ctx context.Context, collections []string) ([]computeclient.Release, error) {
+	names := map[string]string{}
+	rows, err := s.DB.Query(ctx, `SELECT collection, name FROM releases WHERE collection = ANY($1)`, collections)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var c, n string
+		if err := rows.Scan(&c, &n); err != nil {
+			return nil, err
+		}
+		names[c] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]computeclient.Release, len(collections))
+	for i, c := range collections {
+		out[i] = computeclient.Release{Name: cmp.Or(names[c], c), Collection: c}
+	}
+	return out, nil
 }
 
 // isUUID reports whether s is a canonical UUID, so bad IDs never reach Postgres.

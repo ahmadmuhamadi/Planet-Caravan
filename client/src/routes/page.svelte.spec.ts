@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { goto } from '$app/navigation';
 import Page from './+page.svelte';
+import StartPage from '#lib/components/StartPage.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$app/env/public', () => ({ PUBLIC_GATEWAY_URL: 'http://gateway.test' }));
@@ -18,7 +19,7 @@ const json = (status: number, body: unknown) =>
 	new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 beforeEach(() => {
-	resolved = { status: 200, body: { ra: 10.68, dec: 41.27 } };
+	resolved = { status: 200, body: { name: 'M 31', ra: 10.68, dec: 41.27 } };
 	vi.stubGlobal(
 		'fetch',
 		vi.fn(async (url: URL) => {
@@ -45,6 +46,7 @@ describe('/+page.svelte', () => {
 
 		const link = page.getByRole('link', { name: /Barnard's Star/ });
 		await expect.element(link).toHaveAttribute('href', '/object/barnards-star');
+		expect(document.title).toBe('Home · Planet Caravan');
 		await expect.element(page.getByRole('link', { name: /R Draconis/ })).toBeVisible();
 	});
 
@@ -52,7 +54,9 @@ describe('/+page.svelte', () => {
 		render(Page);
 		await search('269.452 4.693');
 
-		await vi.waitFor(() => expect(goto).toHaveBeenCalledWith('/view?ra=269.452&dec=4.693'));
+		await vi.waitFor(() =>
+			expect(goto).toHaveBeenCalledWith('/search?ra=269.452&dec=4.693&fov=3&mode=blink')
+		);
 		const paths = vi.mocked(fetch).mock.calls.map(([u]) => (u as URL).pathname);
 		expect(paths).not.toContain('/api/v1/resolve');
 	});
@@ -62,14 +66,18 @@ describe('/+page.svelte', () => {
 		await expect.element(page.getByRole('link', { name: /R Draconis/ })).toBeVisible();
 		await search('r draconis');
 
-		await vi.waitFor(() => expect(goto).toHaveBeenCalledWith('/object/r-draconis'));
+		await vi.waitFor(() =>
+			expect(goto).toHaveBeenCalledWith('/object/r-draconis?fov=3&mode=blink')
+		);
 	});
 
 	it('resolves other names to a view', async () => {
 		render(Page);
 		await search('M31');
 
-		await vi.waitFor(() => expect(goto).toHaveBeenCalledWith('/view?ra=10.68&dec=41.27'));
+		await vi.waitFor(() =>
+			expect(goto).toHaveBeenCalledWith('/search?ra=10.68&dec=41.27&name=M+31&fov=3&mode=blink')
+		);
 	});
 
 	it('shows the API error message when a name does not resolve', async () => {
@@ -90,5 +98,13 @@ describe('/+page.svelte', () => {
 
 		await expect.element(page.getByRole('alert')).toHaveTextContent('RA must be from 0 to 360');
 		expect(goto).not.toHaveBeenCalled();
+	});
+
+	it('is also the Search page, and explains a bad link', async () => {
+		render(StartPage, { props: { title: 'Search', notice: 'This link has no valid position.' } });
+
+		await expect.element(page.getByRole('alert')).toHaveTextContent('no valid position');
+		await expect.element(page.getByLabelText('Object name or coordinates')).toBeVisible();
+		expect(document.title).toBe('Search · Planet Caravan');
 	});
 });

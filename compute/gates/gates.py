@@ -1,441 +1,441 @@
-"""Phase 0 gates (G1-G4). Standalone script, not service code.
+"""Phase 0 gates (G1-G4): checks run once against the live archives, not service code.
 
-Usage:  uv run python gates/gates.py g1
-        uv run python gates/gates.py g2 [--out DIR]
-        uv run python gates/gates.py g3 "Barnard's star" [--fov 6] [--out DIR]
+Run from compute/:
+    uv run python -m gates.gates g1                # data facts, printed
+    uv run python -m gates.gates g2                # -> gates/results/g2.json
+    uv run python -m gates.gates g3 wise-0855      # -> gates/results/g3.json, PNGs in gates/out/
+    uv run python -m gates.gates g4                # reads g2.json -> gates/results/g4.json
 
-Results are printed as Markdown and copied into docs/decisions.md by hand.
+Each gate prints a Markdown summary for docs/decisions.md and saves its full result as
+JSON, so later gates read earlier results instead of querying the archives again.
 """
 
-from __future__ import annotations
-
 import argparse
-import hashlib
-import io
-import os
-import random
-import sys
-import time
+import enum
+import json
+import logging
 import warnings
-from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 import astropy.units as u
-import httpx
 import numpy as np
-from astropy.coordinates import Distance, SkyCoord
-from astropy.io import fits
 from astropy.time import Time
-from astropy.wcs import WCS, FITSFixedWarning
-from astroquery.gaia import Gaia
+from astropy.wcs import FITSFixedWarning
 from astroquery.ipac.irsa import Irsa
-from astroquery.simbad import Simbad
-from astroquery.simbad import conf as simbad_conf
-from PIL import Image
 from reproject import reproject_interp
 
-warnings.simplefilter("ignore", FITSFixedWarning)
-warnings.filterwarnings("ignore", message=".*SIP.*")
+from app import pipeline, render, sources
+from app.config import settings
+from app.pipeline import Array
+from app.sources import Exposure
 
-SIMBAD_SERVER = os.environ.get("SIMBAD_SERVER", "simbad.harvard.edu")
-CACHE = Path(os.environ.get("CUTOUT_CACHE", Path(__file__).parent.parent / ".cache/cutouts"))
-TARGETS = ["Barnard's star", "WISE J085510.83-071442.5", "eps Ind B", "RW Aur", "R Dra"]
-EPOCH_GAP_DAYS = 30
-PIXEL_SCALE = 6.2  # arcsec, output grid
-ALIGN_THRESHOLD_ARCSEC = 1.2
-DETECT_SNR = 5.0
-MASK_FLAGS = {
-    "TRANSIENT", "OVERFLOW", "SUR_ERROR", "NONFUNC", "MISSING_DATA", "HOT", "COLD",
-    "NONLINEAR", "PERSIST", "OUTLIER",
-}  # fmt: skip
-SATURATION_FLAGS = {"OVERFLOW", "NONLINEAR"}
-MAX_PARALLEL = 8
+log = logging.getLogger("gates")
 
-simbad_conf.server = SIMBAD_SERVER
+HERE = Path(__file__).parent
+RESULTS = HERE / "results"
+MIN_CLEAN_EPOCHS = 2  # G2 pass
+FEATURED_COUNT = (3, 5)  # G4 pass: how many featured targets
+PNG_UPSCALE = 4  # gate PNGs are for people to look at
 
 
-# ---------- data access ----------
+@dataclass(frozen=True)
+class Target:
+    """An acceptance target: how SIMBAD knows it, and how the app shows it (G4)."""
+
+    simbad: str
+    slug: str
+    name: str
+    kind: str  # a phrase for readers, not a SIMBAD object type
 
 
-def collections() -> list[str]:
-    t = Irsa.list_collections(servicetype="SIA", filter="spherex")
-    # Spectral images only: *_cube is the all-sky cube product, not exposures.
-    return [c for c in t["collection"] if not c.endswith("_cube")]
+TARGETS = (
+    Target("Barnard's star", "barnards-star", "Barnard's Star", "Fastest-moving star in the sky"),
+    Target("WISE J085510.83-071442.5", "wise-0855", "WISE 0855", "Coldest known brown dwarf"),
+    Target("eps Ind B", "epsilon-indi-b", "Epsilon Indi B", "Nearby pair of brown dwarfs"),
+    Target("RW Aur", "rw-aurigae", "RW Aurigae", "Young variable star with a dusty disc"),
+    Target("R Dra", "r-draconis", "R Draconis", "Mira variable star"),
+)
+BY_SLUG = {t.slug: t for t in TARGETS}
 
 
-def resolve(name: str) -> SkyCoord:
-    s = Simbad()
-    s.add_votable_fields("pmra", "pmdec", "plx_value")
-    r = s.query_object(name)
-    if r is None or len(r) == 0 or np.ma.is_masked(r["ra"][0]):
-        raise SystemExit(f"SIMBAD could not resolve {name!r}")
-    row = r[0]
-
-    def val(k: str) -> float:
-        return 0.0 if np.ma.is_masked(row[k]) else float(row[k])
-
-    plx = val("plx_value")
-    return SkyCoord(
-        ra=row["ra"] * u.deg,
-        dec=row["dec"] * u.deg,
-        pm_ra_cosdec=val("pmra") * u.mas / u.yr,
-        pm_dec=val("pmdec") * u.mas / u.yr,
-        distance=Distance(parallax=plx * u.mas) if plx > 0 else 10 * u.kpc,
-        obstime=Time("J2000"),
-    )
+def save(name: str, data: Any) -> None:
+    RESULTS.mkdir(exist_ok=True)
+    path = RESULTS / f"{name}.json"
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    log.info("wrote %s", path)
 
 
-def at(c: SkyCoord, mjd: float) -> SkyCoord:
-    p = c.apply_space_motion(new_obstime=Time(mjd, format="mjd"))
-    return SkyCoord(p.ra, p.dec)
-
-
-def query_images(target: SkyCoord, radius: u.Quantity) -> list[dict]:
-    """All SPHEREx spectral images covering target, one row per (obs_id, detector)."""
-    centre = at(target, Time("2026-01-01").mjd)
-    best: dict[tuple[str, int], dict] = {}
-    for coll in collections():
-        t = Irsa.query_sia(pos=(centre, radius), collection=coll)
-        for r in t:
-            det = int(str(r["energy_bandpassname"]).rsplit("D", 1)[1])
-            row = {
-                "collection": coll,
-                "obs_id": str(r["obs_id"]),
-                "detector": det,
-                "t_min": float(r["t_min"]),
-                "release_date": str(r["obs_release_date"]),
-                "access_url": str(r["access_url"]),
-            }
-            key = (row["obs_id"], det)
-            if key not in best or row["release_date"] > best[key]["release_date"]:
-                best[key] = row
-    return sorted(best.values(), key=lambda r: (r["t_min"], r["detector"]))
-
-
-def group_epochs(rows: list[dict]) -> list[list[dict]]:
-    epochs: list[list[dict]] = []
-    last = None
-    for r in sorted(rows, key=lambda r: r["t_min"]):
-        if last is None or r["t_min"] - last > EPOCH_GAP_DAYS:
-            epochs.append([])
-        epochs[-1].append(r)
-        last = r["t_min"]
-    return epochs
-
-
-def cutout(url: str, c: SkyCoord, size_arcmin: float) -> fits.HDUList:
-    q = f"center={c.ra.deg:.6f},{c.dec.deg:.6f}deg&size={size_arcmin}arcmin"
-    path = CACHE / (hashlib.sha256(f"{url}?{q}".encode()).hexdigest() + ".fits")
+def load(name: str) -> Any:
+    path = RESULTS / f"{name}.json"
     if not path.exists():
-        for attempt in range(5):
-            try:
-                r = httpx.get(f"{url}?{q}", timeout=120, follow_redirects=True)
-                r.raise_for_status()
-                break
-            except httpx.HTTPError:
-                if attempt == 4:
-                    raise
-                time.sleep(2**attempt + random.random())
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".part")
-        tmp.write_bytes(r.content)
-        tmp.rename(path)
-    return fits.open(io.BytesIO(path.read_bytes()))
+        raise SystemExit(f"{path} is missing: run gate {name} first")
+    return json.loads(path.read_text())
 
 
-def bits(flags_header: fits.Header, names: set[str]) -> int:
-    mask = 0
-    for k in flags_header["MSKN*"]:
-        if flags_header[k] in names:
-            mask |= 1 << int(k[4:])
-    return mask
+def iso_date(mjd: float) -> str:
+    return str(Time(mjd, format="mjd").iso)[:10]
 
 
-def calibrated(h: fits.HDUList) -> tuple[np.ndarray, np.ndarray, np.ndarray, WCS]:
-    """Zodi-subtracted image, variance, flags, celestial WCS."""
-    img = h["IMAGE"].data.astype(float) - h["ZODI"].data
-    var = h["VARIANCE"].data.astype(float)
-    flags = h["FLAGS"].data
-    bad = (flags & bits(h["FLAGS"].header, MASK_FLAGS)) != 0
-    img[bad] = np.nan
-    var[bad] = np.nan
-    return img, var, flags, WCS(h["IMAGE"].header)
-
-
-def wavelength_at(h: fits.HDUList, x: float, y: float) -> float:
-    w = WCS(header=h["IMAGE"].header, fobj=h, key="W")
-    w.sip = None
-    wl, _bw = w.pixel_to_world(x, y)
-    return float(wl.to_value(u.um))
-
-
-# ---------- G1 ----------
+# ---------- G1: data facts ----------
 
 
 def g1() -> None:
-    print("collections:", collections())
-    c = resolve("Barnard's star")
-    rows = query_images(c, 0.5 * u.arcmin)
-    t = Irsa.query_sia(
-        pos=(at(c, rows[0]["t_min"]), 0.5 * u.arcmin), collection=rows[0]["collection"]
-    )
-    print("columns:", t.colnames)
-    by_det: dict[int, tuple[float, float]] = {}
-    for r in t:
-        by_det[int(str(r["energy_bandpassname"]).rsplit("D", 1)[1])] = (
-            r["em_min"] * 1e6, r["em_max"] * 1e6)  # fmt: skip
-    for d in sorted(by_det):
-        print(f"D{d}: {by_det[d][0]:.3f}-{by_det[d][1]:.3f} um")
-    r0 = rows[0]
-    h = cutout(r0["access_url"], at(c, r0["t_min"]), 3)
-    print("HDUs:", [(x.name, getattr(x.data, "shape", None)) for x in h])
-    print("3 arcmin cutout shape:", h["IMAGE"].data.shape, "BUNIT:", h["IMAGE"].header["BUNIT"])
-    fh = h["FLAGS"].header
-    for k in fh["MSKN*"]:
-        print(f"  flag bit {int(k[4:]):2d} {fh[k]:<13} {fh['MSKD' + k[4:]]}")
-    ny, nx = h["IMAGE"].data.shape
-    print("wavelength at centre:", wavelength_at(h, nx / 2, ny / 2), "um")
+    print("collections:", sources.spectral_collections())
+    star = sources.resolve("Barnard's star")
+    first = sources.query_exposures(star, 0.5 * u.arcmin)[0]
+    pos = sources.position_at(star, first.t_min)
 
-
-# ---------- G2 ----------
-
-
-def aperture(img, var, flags, sat_mask, flag_mask, x, y, r=2.0):
-    ny, nx = img.shape
-    yy, xx = np.mgrid[:ny, :nx]
-    d = np.hypot(xx - x, yy - y)
-    ap = d <= r
-    ann = (d >= 4) & (d <= 7)
-    core = d <= 1.5
-    if not ap.any() or x < 0 or y < 0 or x >= nx or y >= ny:
-        return None
-    sky = np.nanmedian(img[ann])
-    good = ap & np.isfinite(img)
-    flux = np.nansum(img[good] - sky)
-    err = np.sqrt(np.nansum(var[good]))
-    return {
-        "snr": float(flux / err) if err > 0 else 0.0,
-        "saturated": bool((flags[core] & sat_mask).any()),
-        "flagged": bool((flags[core] & flag_mask).any()),
+    table = Irsa.query_sia(pos=(pos, 0.5 * u.arcmin), collection=first.collection)
+    print("columns:", table.colnames)
+    bands = {
+        sources.detector_number(str(row["energy_bandpassname"])): (
+            row["em_min"] * 1e6,
+            row["em_max"] * 1e6,
+        )
+        for row in table
     }
+    for det, (lo, hi) in sorted(bands.items()):
+        print(f"D{det}: {lo:.3f}-{hi:.3f} um")
+
+    hdul = sources.cutout(first.access_url, pos, 3)
+    image = hdul["IMAGE"]
+    print("HDUs:", [(h.name, getattr(h.data, "shape", None)) for h in hdul])
+    print("3 arcmin cutout shape:", image.data.shape, "BUNIT:", image.header["BUNIT"])
+    flags = hdul["FLAGS"].header
+    for key in flags["MSKN*"]:
+        bit = key[4:]
+        print(f"  flag bit {int(bit):2d} {flags[key]:<13} {flags['MSKD' + bit]}")
+    ny, nx = image.data.shape
+    print("wavelength at centre:", pipeline.wavelength_at(hdul, nx / 2, ny / 2), "um")
 
 
-def g2_target(name: str) -> dict:
-    c = resolve(name)
-    rows = query_images(c, 0.5 * u.arcmin)
-    epochs = group_epochs(rows)
-    picks = []  # first exposure per (epoch, detector)
-    for i, ep in enumerate(epochs):
-        seen = set()
-        for r in ep:
-            if r["detector"] not in seen:
-                seen.add(r["detector"])
-                picks.append((i, r))
+# ---------- G2: targets checked ----------
 
-    def measure(item):
-        i, r = item
-        pos = at(c, r["t_min"])
-        h = cutout(r["access_url"], pos, 2)
-        img, var, flags, w = calibrated(h)
-        x, y = w.world_to_pixel(pos)
-        fh = h["FLAGS"].header
-        m = aperture(img, var, flags, bits(fh, SATURATION_FLAGS), bits(fh, MASK_FLAGS), x, y)
-        return i, r, m
 
-    with ThreadPoolExecutor(MAX_PARALLEL) as ex:
-        results = list(ex.map(measure, picks))
-    per_det = defaultdict(lambda: {"n": 0, "det": 0, "clean": 0, "sat": 0, "flag": 0})
-    for _i, r, m in results:
-        s = per_det[r["detector"]]
-        s["n"] += 1
+@dataclass
+class DetectorCheck:
+    exposures: int = 0
+    detected: int = 0  # SNR >= detect_snr
+    clean: int = 0  # detected, no flagged core pixel
+    saturated: int = 0
+    flagged: int = 0
+
+
+@dataclass
+class G2Result:
+    slug: str
+    error: str | None = None
+    ra: float = 0.0  # J2000
+    dec: float = 0.0
+    seen_ra: float = 0.0  # at seen_mjd, the mean date of its SPHEREx images
+    seen_dec: float = 0.0
+    seen_mjd: float = 0.0
+    images: int = 0
+    skipped: int = 0  # images IRSA would not cut out
+    collections: list[str] = field(default_factory=list)
+    epochs: list[tuple[str, int]] = field(default_factory=list)  # (first date, images)
+    detectors: dict[int, DetectorCheck] = field(default_factory=dict)
+    clean_epochs: int = 0
+
+    @property
+    def passed(self) -> bool:
+        return self.error is None and self.clean_epochs >= MIN_CLEAN_EPOCHS
+
+
+class Skipped(enum.Enum):
+    SKIPPED = enum.auto()
+
+
+SKIPPED = Skipped.SKIPPED
+
+
+def first_per_detector(epochs: list[list[Exposure]]) -> list[tuple[int, Exposure]]:
+    """(epoch index, exposure) for the first exposure of each detector in each epoch."""
+    picks = []
+    for i, epoch in enumerate(epochs):
+        seen: set[int] = set()
+        for e in epoch:
+            if e.detector not in seen:
+                seen.add(e.detector)
+                picks.append((i, e))
+    return picks
+
+
+def g2_target(target: Target) -> G2Result:
+    """Measures the first exposure per (epoch, detector): detected, saturated, flagged."""
+    star = sources.resolve(target.simbad)
+    exposures = sources.query_exposures(star, 0.5 * u.arcmin)
+    epochs = pipeline.group_epochs(exposures, settings.epoch_gap_days)
+
+    def measure(e: Exposure) -> Skipped | pipeline.Photometry | None:
+        """SKIPPED when IRSA rejects the image; None when the target is off the cutout."""
+        pos = sources.position_at(star, e.t_min)
+        hdul = sources.cutout_or_none(e.access_url, pos, 2)
+        if hdul is None:
+            return SKIPPED
+        cal = pipeline.calibrate(hdul, settings.mask_flags)
+        x, y = cal.wcs.world_to_pixel(pos)
+        header = hdul["FLAGS"].header
+        return pipeline.photometry(
+            cal,
+            float(x),
+            float(y),
+            saturation_mask=pipeline.flag_bits(header, settings.saturation_flags),
+            flag_mask=pipeline.flag_bits(header, settings.mask_flags),
+        )
+
+    picks = first_per_detector(epochs)
+    with ThreadPoolExecutor(settings.max_parallel_downloads) as pool:
+        measured = list(pool.map(measure, [e for _, e in picks]))
+
+    detectors: dict[int, DetectorCheck] = {}
+    clean_epochs: set[int] = set()
+    skipped = 0
+    for (i, e), m in zip(picks, measured, strict=True):
+        check = detectors.setdefault(e.detector, DetectorCheck())
+        check.exposures += 1
+        if m is SKIPPED:
+            skipped += 1
+            continue
         if m is None:
             continue
-        s["det"] += m["snr"] >= DETECT_SNR
-        s["sat"] += m["saturated"]
-        s["flag"] += m["flagged"]
-        s["clean"] += m["snr"] >= DETECT_SNR and not m["flagged"]
-    clean_epochs = {i for i, _r, m in results if m and m["snr"] >= DETECT_SNR and not m["flagged"]}
-    return {
-        "name": name,
-        "ra": c.ra.deg,
-        "dec": c.dec.deg,
-        "images": len(rows),
-        "collections": sorted({r["collection"] for r in rows}),
-        "epochs": [(Time(ep[0]["t_min"], format="mjd").iso[:10], len(ep)) for ep in epochs],
-        "per_det": dict(sorted(per_det.items())),
-        "clean_epochs": len(clean_epochs),
-        "pass": len(epochs) >= 2 and len(clean_epochs) >= 2,
-    }
+        detected = m.snr >= settings.detect_snr
+        check.detected += detected
+        check.saturated += m.saturated
+        check.flagged += m.flagged
+        if detected and not m.flagged:
+            check.clean += 1
+            clean_epochs.add(i)
+
+    mean_mjd = float(np.mean([e.t_min for e in exposures]))
+    seen = sources.position_at(star, mean_mjd)  # fast movers are far from J2000
+    return G2Result(
+        slug=target.slug,
+        ra=float(star.ra.deg),
+        dec=float(star.dec.deg),
+        seen_ra=float(seen.ra.deg),
+        seen_dec=float(seen.dec.deg),
+        seen_mjd=mean_mjd,
+        images=len(exposures),
+        skipped=skipped,
+        collections=sorted({e.collection for e in exposures}),
+        epochs=[(iso_date(ep[0].t_min), len(ep)) for ep in epochs],
+        detectors=dict(sorted(detectors.items())),
+        clean_epochs=len(clean_epochs),
+    )
 
 
 def g2() -> None:
-    for name in TARGETS:
+    results = []
+    for target in TARGETS:
         try:
-            s = g2_target(name)
-        except Exception as e:  # report and continue with the next target
-            print(f"### {name}\nERROR: {e!r}\n")
-            continue
-        print(f"### {s['name']}  (J2000 {s['ra']:.5f} {s['dec']:.5f})")
-        print(f"images: {s['images']} from {s['collections']}")
-        print(f"epochs: {len(s['epochs'])} -> " + ", ".join(f"{d} ({n})" for d, n in s["epochs"]))
-        print(
-            "| det | exposures checked | detected (SNR>=5) | clean "
-            "| saturated core | flagged core |"
+            results.append(g2_target(target))
+        except Exception as e:  # one target's failure is part of the report, not its end
+            log.exception("G2 failed for %s", target.name)
+            results.append(G2Result(slug=target.slug, error=repr(e)))
+    save("g2", [asdict(r) | {"passed": r.passed} for r in results])
+    for r in results:
+        print(g2_markdown(r))
+
+
+def g2_markdown(r: G2Result) -> str:
+    name = BY_SLUG[r.slug].name
+    if r.error:
+        return f"### {name}\nERROR: {r.error}\n"
+    lines = [
+        f"### {name}  (J2000 {r.ra:.5f} {r.dec:.5f})",
+        f"images: {r.images} from {', '.join(r.collections)}; skipped: {r.skipped}",
+        f"epochs: {len(r.epochs)} -> " + ", ".join(f"{d} ({n})" for d, n in r.epochs),
+        "| det | exposures checked | detected (SNR>=5) | clean | saturated core | flagged core |",
+        "|---|---|---|---|---|---|",
+    ]
+    for det, c in r.detectors.items():
+        lines.append(
+            f"| D{det} | {c.exposures} | {c.detected} | {c.clean} | {c.saturated} | {c.flagged} |"
         )
-        print("|---|---|---|---|---|---|")
-        for d, v in s["per_det"].items():
-            print(f"| D{d} | {v['n']} | {v['det']} | {v['clean']} | {v['sat']} | {v['flag']} |")
-        print(f"epochs with a clean detection: {s['clean_epochs']}  PASS: {s['pass']}\n")
+    lines.append(f"epochs with a clean detection: {r.clean_epochs}  PASS: {r.passed}\n")
+    return "\n".join(lines)
 
 
-# ---------- G3 ----------
+# ---------- G3: science proven ----------
 
 
-def tan_grid(centre: SkyCoord, fov_arcmin: float) -> tuple[WCS, tuple[int, int]]:
-    n = int(np.ceil(fov_arcmin * 60 / PIXEL_SCALE)) | 1  # odd, target on a pixel centre
-    w = WCS(naxis=2)
-    w.wcs.ctype = ["RA---TAN", "DEC--TAN"]
-    w.wcs.crval = [centre.ra.deg, centre.dec.deg]
-    w.wcs.crpix = [(n + 1) / 2, (n + 1) / 2]
-    w.wcs.cdelt = [-PIXEL_SCALE / 3600, PIXEL_SCALE / 3600]
-    return w, (n, n)
+@dataclass
+class Frame:
+    epoch: int
+    detector: int
+    image: Array  # co-add on the shared grid
+    mjd: float  # mean date of its exposures
+    exposures: int
 
 
-def gaia_field(centre: SkyCoord, radius_deg: float, gmax: float = 16.0):
-    q = f"""SELECT ra, dec, pmra, pmdec, parallax, phot_g_mean_mag FROM gaiadr3.gaia_source
-    WHERE 1=CONTAINS(POINT(ra,dec),CIRCLE({centre.ra.deg},{centre.dec.deg},{radius_deg}))
-    AND phot_g_mean_mag < {gmax}"""
-    return Gaia.launch_job(q).get_results()
+def g3(slug: str, fov_arcmin: float, out: Path) -> None:
+    """Cutouts -> co-adds per (epoch, detector) on one grid with one stretch per
+    detector; alignment residual of each against Gaia."""
+    star = sources.resolve(BY_SLUG[slug].simbad)
+    exposures = sources.query_exposures(star, fov_arcmin / 2 * u.arcmin)
+    epochs = pipeline.group_epochs(exposures, settings.epoch_gap_days)
+    centre = sources.position_at(star, epochs[0][0].t_min)
+    grid, shape = pipeline.tan_grid(centre, fov_arcmin, settings.pixel_scale_arcsec)
 
+    def reprojected(e: Exposure) -> tuple[Exposure, Array, Array] | None:
+        # A larger cutout, so reprojection fills the grid's corners.
+        hdul = sources.cutout_or_none(e.access_url, centre, fov_arcmin * 1.2)
+        if hdul is None:
+            return None
+        cal = pipeline.calibrate(hdul, settings.mask_flags)
+        image, _ = reproject_interp((cal.image, cal.wcs), grid, shape_out=shape)
+        variance, _ = reproject_interp((cal.variance, cal.wcs), grid, shape_out=shape)
+        return e, image, variance
 
-def gaia_at(g, mjd: float) -> SkyCoord:
-    pm_ok = ~(np.ma.getmaskarray(g["pmra"]) | np.ma.getmaskarray(g["pmdec"]))
-    pmra = np.where(pm_ok, np.ma.filled(g["pmra"], 0), 0)
-    pmdec = np.where(pm_ok, np.ma.filled(g["pmdec"], 0), 0)
-    dt = (Time(mjd, format="mjd") - Time(2016.0, format="jyear")).to_value(u.yr)
-    dec = np.asarray(g["dec"]) + pmdec * dt / 3.6e6
-    ra = np.asarray(g["ra"]) + pmra * dt / 3.6e6 / np.cos(np.radians(dec))
-    return SkyCoord(ra * u.deg, dec * u.deg)
+    with ThreadPoolExecutor(settings.max_parallel_downloads) as pool:
+        loaded = [r for r in pool.map(reprojected, exposures) if r is not None]
 
+    frames = []
+    for i, epoch in enumerate(epochs):
+        in_epoch = set(epoch)
+        for det in sorted({e.detector for e in epoch}):
+            stack = [(img, var) for e, img, var in loaded if e in in_epoch and e.detector == det]
+            if stack:
+                mjd = float(np.mean([e.t_min for e in epoch if e.detector == det]))
+                frames.append(Frame(i, det, pipeline.coadd(stack), mjd, len(stack)))
 
-def centroid(img: np.ndarray, x: float, y: float, half: int = 3):
-    """Background-subtracted first-moment centroid in a small box; None if unusable."""
-    xi, yi = int(round(x)), int(round(y))
-    ny, nx = img.shape
-    if xi - half < 0 or yi - half < 0 or xi + half >= nx or yi + half >= ny:
-        return None
-    box = img[yi - half : yi + half + 1, xi - half : xi + half + 1]
-    if not np.isfinite(box).all():
-        return None
-    b = box - np.median(img[max(0, yi - 8) : yi + 9, max(0, xi - 8) : xi + 9])
-    b = np.clip(b, 0, None)
-    if b.sum() <= 0:
-        return None
-    yy, xx = np.mgrid[-half : half + 1, -half : half + 1]
-    return xi + (xx * b).sum() / b.sum(), yi + (yy * b).sum() / b.sum()
-
-
-def g3(name: str, fov: float, out: Path) -> None:
-    c = resolve(name)
-    rows = query_images(c, fov / 2 * u.arcmin)
-    epochs = group_epochs(rows)
-    ref_pos = at(c, epochs[0][0]["t_min"])
-    grid, shape = tan_grid(ref_pos, fov)
-    print(f'{name}: {len(rows)} images, {len(epochs)} epochs, grid {shape} @ {PIXEL_SCALE}"')
-
-    def load(r):
-        h = cutout(r["access_url"], ref_pos, fov * 1.2)
-        img, var, _flags, w = calibrated(h)
-        ri, _ = reproject_interp((img, w), grid, shape_out=shape)
-        rv, _ = reproject_interp((var, w), grid, shape_out=shape)
-        return r, ri, rv
-
-    with ThreadPoolExecutor(MAX_PARALLEL) as ex:
-        loaded = list(ex.map(load, rows))
-
-    frames = {}
-    for i, ep in enumerate(epochs):
-        ids = {(r["obs_id"], r["detector"]) for r in ep}
-        for det in sorted({r["detector"] for r in ep}):
-            stack = [(ri, rv) for r, ri, rv in loaded
-                     if (r["obs_id"], r["detector"]) in ids and r["detector"] == det]  # fmt: skip
-            imgs = np.array([s[0] for s in stack])
-            wts = 1 / np.array([s[1] for s in stack])
-            ok = np.isfinite(imgs) & np.isfinite(wts) & (wts > 0)
-            wsum = np.where(ok, wts, 0).sum(0)
-            with np.errstate(invalid="ignore", divide="ignore"):
-                co = np.where(ok, imgs * wts, 0).sum(0) / wsum
-            co[wsum == 0] = np.nan
-            mjd = float(np.mean([r["t_min"] for r in ep if r["detector"] == det]))
-            frames[(i, det)] = (co, mjd, len(stack))
-
-    gaia = gaia_field(ref_pos, fov / 60 * 0.75)
-    print(f"Gaia stars G<16 in field: {len(gaia)}")
-    print('| epoch | det | n exp | n stars | dx" | dy" | residual" | scatter" | pass |')
-    print("|---|---|---|---|---|---|---|---|---|")
-    worst = 0.0
-    for (i, det), (co, mjd, n) in sorted(frames.items()):
-        gx, gy = grid.world_to_pixel(gaia_at(gaia, mjd))
-        noise = 1.4826 * np.nanmedian(np.abs(co - np.nanmedian(co)))
-        offs = []
-        for x, y in zip(gx, gy, strict=True):
-            near = np.hypot(gx - x, gy - y)
-            if (near < 3).sum() > 1:  # blended with another Gaia star
-                continue
-            if np.hypot(x - grid.wcs.crpix[0] + 1, y - grid.wcs.crpix[1] + 1) < 3:
-                continue  # the target itself
-            m = centroid(co, x, y)
-            if m is None:
-                continue
-            xi, yi = int(round(x)), int(round(y))
-            if co[yi, xi] - np.nanmedian(co) < 20 * noise:
-                continue
-            dx, dy = m[0] - x, m[1] - y
-            if np.hypot(dx, dy) < 1.5:
-                offs.append((dx, dy))
-        if len(offs) < 3:
-            print(f"| {i} | D{det} | {n} | {len(offs)} | - | - | - | - | too few stars |")
-            continue
-        o = np.array(offs) * PIXEL_SCALE
-        mdx, mdy = np.median(o[:, 0]), np.median(o[:, 1])
-        res = float(np.hypot(mdx, mdy))
-        scat = float(np.median(np.hypot(o[:, 0] - mdx, o[:, 1] - mdy)))
-        worst = max(worst, res)
-        ok = res <= ALIGN_THRESHOLD_ARCSEC
-        print(
-            f"| {i} | D{det} | {n} | {len(o)} | {mdx:+.2f} | {mdy:+.2f} "
-            f"| {res:.2f} | {scat:.2f} | {ok} |"
+    gaia = sources.gaia_stars(centre.ra.deg, centre.dec.deg, fov_arcmin / 60 * 0.75)
+    target_xy = (grid.wcs.crpix[0] - 1, grid.wcs.crpix[1] - 1)  # FITS pixels are 1-based
+    limit = settings.align_threshold_arcsec
+    rows = []
+    for f in frames:
+        stars = pipeline.gaia_positions_at(gaia, f.mjd)
+        a = pipeline.alignment(f.image, grid, stars, settings.pixel_scale_arcsec, target_xy)
+        passed = None if a.residual_arcsec is None else a.residual_arcsec <= limit
+        rows.append(
+            {
+                "epoch": f.epoch,
+                "detector": f.detector,
+                "exposures": f.exposures,
+                "stars": a.stars,
+                "dx": a.dx_arcsec,
+                "dy": a.dy_arcsec,
+                "residual": a.residual_arcsec,
+                "scatter": a.scatter_arcsec,
+                "passed": passed,
+            }
         )
-    print(f'\nworst frame residual: {worst:.2f}" (threshold {ALIGN_THRESHOLD_ARCSEC}")')
 
-    # Shared stretch per detector from the reference epoch, applied to every epoch.
+    measured = [r["residual"] for r in rows if r["residual"] is not None]
+    result = {
+        "slug": slug,
+        "fov_arcmin": fov_arcmin,
+        "images": len(exposures),
+        "skipped": len(exposures) - len(loaded),
+        "threshold_arcsec": limit,
+        "frames": rows,
+        "worst_residual": max(measured, default=None),
+        "passed": bool(measured) and max(measured) <= limit,
+    }
+    save("g3", result)
+    write_pngs(frames, out)
+    print(g3_markdown(result))
+
+
+def write_pngs(frames: list[Frame], out: Path) -> None:
+    """One stretch per detector from its first (reference) epoch, applied to every epoch."""
     out.mkdir(parents=True, exist_ok=True)
-    for det in sorted({d for _, d in frames}):
-        ref = next(frames[(i, det)][0] for i in range(len(epochs)) if (i, det) in frames)
-        lo, hi = np.nanpercentile(ref, [1, 99.5])
-        for (i, d), (co, mjd, _n) in sorted(frames.items()):
-            if d != det:
-                continue
-            v = np.clip((co - lo) / (hi - lo), 0, 1)
-            v = np.arcsinh(10 * v) / np.arcsinh(10)
-            png = np.flipud(np.nan_to_num(v * 255)).astype(np.uint8)
-            date = Time(mjd, format="mjd").iso[:10]
-            Image.fromarray(png).resize((png.shape[1] * 4, png.shape[0] * 4), Image.NEAREST).save(
-                out / f"D{det}_e{i}_{date}.png"
+    limits: dict[int, tuple[float, float]] = {}
+    for f in sorted(frames, key=lambda f: (f.detector, f.epoch)):
+        lo, hi = limits.setdefault(f.detector, render.stretch_limits(f.image))
+        pixels = render.stretch(f.image, lo, hi)
+        path = out / f"D{f.detector}_e{f.epoch}_{iso_date(f.mjd)}.png"
+        path.write_bytes(render.png(pixels, upscale=PNG_UPSCALE))
+    log.info("frames written to %s", out)
+
+
+def g3_markdown(r: dict[str, Any]) -> str:
+    epochs = len({f["epoch"] for f in r["frames"]})
+    lines = [
+        f"{BY_SLUG[r['slug']].name}: {r['images']} images ({r['skipped']} skipped), "
+        f"{epochs} epochs, fov {r['fov_arcmin']}′",
+        '| epoch | det | n exp | n stars | dx" | dy" | residual" | scatter" | pass |',
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for f in r["frames"]:
+        head = f"| {f['epoch']} | D{f['detector']} | {f['exposures']} | {f['stars']} "
+        if f["residual"] is None:
+            lines.append(head + "| - | - | - | - | too few stars |")
+        else:
+            lines.append(
+                head + f"| {f['dx']:+.2f} | {f['dy']:+.2f} | {f['residual']:.2f} "
+                f"| {f['scatter']:.2f} | {f['passed']} |"
             )
-    print(f"frames written to {out}")
+    worst = "n/a" if r["worst_residual"] is None else f'{r["worst_residual"]:.2f}"'
+    lines.append(f'\nworst frame residual: {worst} (threshold {r["threshold_arcsec"]}")')
+    lines.append(f"PASS: {r['passed']}")
+    return "\n".join(lines)
+
+
+# ---------- G4: demo set frozen ----------
+
+
+def featured(g2_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The targets that passed G2, as gateway featured.json entries. Positions are where
+    SPHEREx sees them (mean image date), since fast movers are far from J2000."""
+    return [
+        {
+            "slug": r["slug"],
+            "name": BY_SLUG[r["slug"]].name,
+            "type": BY_SLUG[r["slug"]].kind,
+            "ra": round(r["seen_ra"], 6),
+            "dec": round(r["seen_dec"], 6),
+        }
+        for r in g2_results
+        if r["passed"]
+    ]
+
+
+def g4() -> None:
+    entries = featured(load("g2"))
+    lo, hi = FEATURED_COUNT
+    passed = lo <= len(entries) <= hi
+    save("g4", {"featured": entries, "passed": passed})
+    print(json.dumps(entries, indent=2, ensure_ascii=False))
+    print(f"\n{len(entries)} targets passed G2 (need {lo} to {hi}). PASS: {passed}")
+
+
+# ---------- command line ----------
 
 
 def main() -> None:
-    p = argparse.ArgumentParser()
-    p.add_argument("gate", choices=["g1", "g2", "g3"])
-    p.add_argument("target", nargs="?", default="Barnard's star")
-    p.add_argument("--fov", type=float, default=6.0)
-    p.add_argument("--out", type=Path, default=Path("gates/out"))
-    a = p.parse_args()
-    {"g1": g1, "g2": g2}.get(a.gate, lambda: g3(a.target, a.fov, a.out))()
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # a line per request is noise
+    warnings.simplefilter("ignore", FITSFixedWarning)
+    warnings.filterwarnings("ignore", message=".*SIP.*")
+
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
+    gates = parser.add_subparsers(dest="gate", required=True)
+    gates.add_parser("g1", help="verify the data facts")
+    gates.add_parser("g2", help="check every acceptance target")
+    p3 = gates.add_parser("g3", help="align one target and measure the residual against Gaia")
+    p3.add_argument("target", choices=sorted(BY_SLUG))
+    p3.add_argument("--fov", type=float, default=6.0, help="arcmin")
+    p3.add_argument("--out", type=Path, default=HERE / "out", help="PNG frames")
+    gates.add_parser("g4", help="featured targets from the G2 result")
+    args = parser.parse_args()
+
+    match args.gate:
+        case "g1":
+            g1()
+        case "g2":
+            g2()
+        case "g3":
+            g3(args.target, args.fov, args.out)
+        case "g4":
+            g4()
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

@@ -26,9 +26,11 @@ type config struct {
 	ComputeRetries  int
 	CallbackBaseURL string
 
-	JobTimeout  time.Duration
-	ResolveTTL  time.Duration
-	CoverageTTL time.Duration
+	JobTimeout       time.Duration
+	ResolveTTL       time.Duration
+	CoverageTTL      time.Duration
+	StaleCoverageTTL time.Duration
+	FeaturedRefresh  time.Duration
 
 	CORSOrigins    []string
 	TrustedProxies []string
@@ -61,6 +63,10 @@ func loadConfig() (config, error) {
 		JobTimeout:  e.duration("JOB_TIMEOUT", 5*time.Minute),
 		ResolveTTL:  e.duration("RESOLVE_TTL", 30*24*time.Hour),
 		CoverageTTL: e.duration("COVERAGE_TTL", 6*time.Hour),
+		// Last good coverage, used while compute is down (R5).
+		StaleCoverageTTL: e.duration("COVERAGE_STALE_TTL", 30*24*time.Hour),
+		// How often featured views are checked against the current release set (B11).
+		FeaturedRefresh: e.duration("FEATURED_REFRESH", time.Hour),
 
 		CORSOrigins:    e.list("CORS_ORIGINS"),
 		TrustedProxies: e.list("TRUSTED_PROXIES"),

@@ -2,8 +2,6 @@
 package api
 
 import (
-	_ "embed"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"time"
@@ -19,8 +17,13 @@ import (
 
 // Config holds the API settings.
 type Config struct {
-	ResolveTTL     time.Duration
-	CoverageTTL    time.Duration
+	ResolveTTL  time.Duration
+	CoverageTTL time.Duration
+	// StaleCoverageTTL keeps a copy of each coverage answer for when compute is
+	// unavailable, so cached views (featured ones above all) still open (R5).
+	StaleCoverageTTL time.Duration
+	// Featured targets (B8, B11). Nil uses the embedded featured.json.
+	Featured       []FeaturedTarget
 	CORSOrigins    []string
 	TrustedProxies []string // empty: use the connection address as the client IP
 	MaxBodyBytes   int64
@@ -46,26 +49,25 @@ type Deps struct {
 type server struct {
 	Deps
 	cfg      Config
-	featured []featuredTarget
+	featured []FeaturedTarget
 	jobLimit *ipLimiter
 }
 
-// featuredTarget is one of the fixed demo targets frozen in Phase 0 (G4).
-type featuredTarget struct {
-	Slug string `json:"slug"`
-	Name string `json:"name"`
-	Type string `json:"type"`
+// API is the HTTP handler plus the background work that keeps featured views ready.
+type API struct {
+	http.Handler
+	s *server
 }
 
-// featured.json stays empty until G4 names the featured targets.
-//
-//go:embed featured.json
-var featuredJSON []byte
-
-// New builds the router.
-func New(cfg Config, d Deps) (*gin.Engine, error) {
-	s := &server{Deps: d, cfg: cfg, jobLimit: newIPLimiter(cfg.JobsPerMinute/60, cfg.JobBurst)}
-	if err := json.Unmarshal(featuredJSON, &s.featured); err != nil {
+// New builds the API.
+func New(cfg Config, d Deps) (*API, error) {
+	s := &server{Deps: d, cfg: cfg, featured: cfg.Featured, jobLimit: newIPLimiter(cfg.JobsPerMinute/60, cfg.JobBurst)}
+	if s.featured == nil {
+		var err error
+		if s.featured, err = DefaultFeatured(); err != nil {
+			return nil, err
+		}
+	} else if err := checkFeatured(s.featured); err != nil {
 		return nil, err
 	}
 
@@ -88,6 +90,7 @@ func New(cfg Config, d Deps) (*gin.Engine, error) {
 	pub := v1.Group("", rateLimit(newIPLimiter(cfg.RatePerSecond, cfg.RateBurst)))
 	pub.GET("/resolve", s.resolveName)
 	pub.GET("/autocomplete", s.autocomplete)
+	pub.GET("/objects/:slug", s.getObject)
 	pub.GET("/coverage", s.coverageAt)
 	pub.POST("/views", s.createView)
 	pub.GET("/views", s.findView)
@@ -96,5 +99,5 @@ func New(cfg Config, d Deps) (*gin.Engine, error) {
 
 	// Compute reports job progress here (CONTRACT: callback URL).
 	r.POST("/internal/jobs/:id/progress", internalAuth(cfg.ComputeSecret), s.jobProgress)
-	return r, nil
+	return &API{Handler: r, s: s}, nil
 }

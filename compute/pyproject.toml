@@ -9,19 +9,16 @@ dependencies = [
     "fastapi>=0.162.5",
     "httpx>=0.28.1",
     "numpy>=2.5.4",
-    "photutils>=3.1.1",
     "pillow>=13.0.0",
-    "prometheus-client>=0.26.0",
     "pydantic-settings>=2.16.2",
-    "pyvo>=1.10.0",
     "reproject>=0.21.0",
-    "scipy>=1.18.1",
     "uvicorn[standard]>=0.54.0",
 ]
 
 [dependency-groups]
 dev = [
     "httpx2>=2.16.0",
+    "mypy>=2.4.1",
     "pytest>=9.2.0",
     "ruff>=0.17.4",
 ]
@@ -38,3 +35,8 @@ select = ["E", "W", "F", "I", "B", "UP"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.mypy]
+files = ["app", "gates"]
+strict = true
+ignore_missing_imports = true  # astroquery, reproject ship no types

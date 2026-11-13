@@ -1,4 +1,10 @@
-/* Design tokens from docs/SPHEREx Sky Explorer Viewer.html; theme follows the system. */
+/*
+ * Global styles: design tokens, base elements, and the few control styles shared by
+ * several components. Layout and one-off styles stay scoped in each component.
+ * Tokens come from docs/SPHEREx Sky Explorer Viewer.html; the theme follows the system.
+ */
+
+/* ---- Tokens ---- */
 :root {
 	--bg: #f4f5f7;
 	--surface: #ffffff;
@@ -15,7 +21,15 @@
 	--infoBg: #e3eeff;
 	--infoFg: #084bb0;
 	--danger: #9a3412;
+
+	/* The sky frame is dark in both themes. */
+	--stage: #05070b;
+	--onStage: #fefefe;
+	--stageChip: rgb(5 7 11 / 0.82);
+
 	--mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+	--radius: 10px;
+	--control-h: 44px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -38,6 +52,7 @@
 	}
 }
 
+/* ---- Base ---- */
 body {
 	margin: 0;
 	background: var(--bg);
@@ -63,4 +78,67 @@ a:focus-visible,
 input:focus-visible {
 	outline: 2px solid var(--accent);
 	outline-offset: 2px;
+}
+
+/* ---- Shared controls ---- */
+
+/* Small muted caption above a control or value. */
+.caption {
+	margin: 0;
+	font-size: 13px;
+	color: var(--muted);
+}
+
+.mono {
+	font-family: var(--mono);
+}
+
+.input {
+	height: var(--control-h);
+	box-sizing: border-box;
+	padding: 0 14px;
+	border-radius: var(--radius);
+	border: 1px solid var(--line2);
+	background: var(--surface);
+	color: var(--text);
+	font-size: 16px;
+}
+
+/* Primary action. */
+.btn {
+	height: var(--control-h);
+	padding: 0 16px;
+	border: 0;
+	border-radius: var(--radius);
+	background: var(--accent);
+	color: var(--accentText);
+	font-size: 15px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.btn:disabled {
+	opacity: 0.7;
+	cursor: progress;
+}
+
+/* On/off choice; state comes from aria-pressed so it always matches what is announced. */
+.toggle {
+	height: var(--control-h);
+	padding: 0;
+	border-radius: var(--radius);
+	border: 1px solid var(--line2);
+	background: var(--surface);
+	color: var(--text);
+	font-size: 15px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.toggle[aria-pressed='true'] {
+	border-color: var(--accent);
+	background: var(--accent);
+	color: var(--accentText);
+}
+.toggle:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
 }

@@ -29,6 +29,7 @@ import (
 type stubCompute struct {
 	resolveCalls, coverageCalls, processCalls atomic.Int32
 	uncovered                                 atomic.Bool
+	newRelease                                atomic.Bool                 // coverage also lists DR1
 	process                                   atomic.Pointer[processFunc] // nil: render a one-frame view
 	lastProcess                               atomic.Pointer[computeclient.ProcessRequest]
 }
@@ -66,9 +67,13 @@ func (s *stubCompute) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(`{"covered":false,"epochs":[],"releases":[]}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"covered":true,
+		releases := `{"name":"QR3","collection":"spherex_qr3"},{"name":"QR2","collection":"spherex_qr2"}`
+		if s.newRelease.Load() {
+			releases += `,{"name":"DR1","collection":"spherex_dr1"}`
+		}
+		_, _ = fmt.Fprintf(w, `{"covered":true,
 			"epochs":[{"index":0,"date":"2025-05-10","mjd":60805.1,"detectors":[1,2]}],
-			"releases":[{"name":"QR3","collection":"spherex_qr3"},{"name":"QR2","collection":"spherex_qr2"}]}`))
+			"releases":[%s]}`, releases)
 	case "/internal/process":
 		s.processCalls.Add(1)
 		var req computeclient.ProcessRequest
@@ -100,7 +105,7 @@ func writeView(w http.ResponseWriter, req computeclient.ProcessRequest) {
 }
 
 type env struct {
-	router  http.Handler
+	router  *API
 	compute *stubCompute
 	srv     *httptest.Server
 	store   *store.Store
@@ -203,6 +208,10 @@ func TestViewLifecycle(t *testing.T) {
 	v := js.Result
 	if v.Target.Name != "Barnard's Star" || v.FOVArcmin != 3 || v.Mode != "blink" || len(v.Frames) != 1 || v.Stretch.Type != "asinh" {
 		t.Fatalf("view = %+v", v)
+	}
+	// B10: the releases it was built from, by name; nothing newer yet.
+	if fmt.Sprint(v.ReleaseSet) != "[{QR2 spherex_qr2} {QR3 spherex_qr3}]" || v.NewerDataAvailable {
+		t.Errorf("release_set = %v, newer_data_available = %v", v.ReleaseSet, v.NewerDataAvailable)
 	}
 	// Coordinates are rounded to 0.1" before processing (B5).
 	if ra, _ := cache.RoundCoords(269.4520769, 0); v.Target.RA != ra {

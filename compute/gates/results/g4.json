@@ -1,0 +1,19 @@
+{
+  "featured": [
+    {
+      "slug": "wise-0855",
+      "name": "WISE 0855",
+      "type": "Coldest known brown dwarf",
+      "ra": 133.7598,
+      "dec": -7.242185
+    },
+    {
+      "slug": "epsilon-indi-b",
+      "name": "Epsilon Indi B",
+      "type": "Nearby pair of brown dwarfs",
+      "ra": 331.096662,
+      "dec": -56.800647
+    }
+  ],
+  "passed": false
+}

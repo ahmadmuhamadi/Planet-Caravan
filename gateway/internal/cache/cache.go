@@ -75,6 +75,10 @@ func CoverageKey(ra, dec float64) string {
 	return fmt.Sprintf("coverage:%d:%d", r, d)
 }
 
+// StaleKey is where the last good copy of a value lives, kept longer than the
+// value itself and used only when its source is unavailable (R5).
+func StaleKey(key string) string { return "stale:" + key }
+
 // Redis stores JSON values with a TTL. Redis errors are logged and treated as
 // misses, so a Redis outage slows requests down instead of failing them.
 type Redis struct {

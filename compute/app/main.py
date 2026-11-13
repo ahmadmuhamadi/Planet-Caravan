@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-app = FastAPI()
+app = FastAPI(title="Planet Caravan compute")
 
 
 @app.get("/health")

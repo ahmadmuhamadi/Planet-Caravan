@@ -80,7 +80,7 @@ func (r *Runner) Release(ip string) {
 func (r *Runner) Start(job *store.Job, ip, requestID string) {
 	r.wg.Go(func() {
 		defer r.Release(ip)
-		r.run(job, requestID)
+		r.Run(job, requestID)
 	})
 }
 
@@ -97,7 +97,10 @@ func (r *Runner) Shutdown(ctx context.Context) error {
 	}
 }
 
-func (r *Runner) run(job *store.Job, requestID string) {
+// Run runs a claimed job and returns when it ends. It takes no per-IP slot: it is
+// for the gateway's own jobs (featured views), which the caller runs one at a time.
+// Shutdown cancels it, but does not wait for it; the caller waits.
+func (r *Runner) Run(job *store.Job, requestID string) {
 	start := time.Now()
 	log := r.log.With("job_id", job.ID, "request_id", requestID)
 	ctx, cancel := context.WithTimeout(computeclient.WithRequestID(r.ctx, requestID), r.timeout)

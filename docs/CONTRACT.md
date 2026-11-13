@@ -1,7 +1,7 @@
 # CONTRACT — shared by all 3 repos (copy into each)
 
 Source of truth for anything two repos must agree on. Change here first, then bump the version.
-Version: 0.1
+Version: 0.2
 
 ## Flow
 client → gateway (public, Go/Gin) → compute (private, Python/FastAPI)
@@ -23,12 +23,14 @@ client → gateway (public, Go/Gin) → compute (private, Python/FastAPI)
 Phase 1
 - GET /resolve?name= → ra, dec, pm, parallax, type, links
 - GET /autocomplete?q= → featured target suggestions
-- GET /objects/{slug} → target for a featured slug
+- GET /objects/{slug} → featured target: slug, name, type, ra, dec
 - GET /coverage?ra=&dec= → epochs, releases. No coverage = 200 with covered:false
 - POST /views → 200 + result if cached, else 202 {job_id, status_url}
 - GET /views?ra=&dec=&fov=&mode= → same cache key as POST /views
 - GET /jobs/{id} → status (queued|running|done|failed), progress 0-100, result or error
 - GET /views/{id} → epochs, frames, stretch, release_set, newer_data_available, warnings
+  (release_set: the releases the view was built from, [{name, collection}];
+  newer_data_available: a release it was not built from now covers the target)
 - GET /healthz, /readyz, /metrics
 Phase 2
 - GET /views/{id}/blink.gif (Should)

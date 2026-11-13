@@ -62,7 +62,7 @@ func (s *server) autocomplete(c *gin.Context) {
 		return
 	}
 	type match struct {
-		t      featuredTarget
+		t      FeaturedTarget
 		prefix bool
 	}
 	var matches []match
@@ -81,7 +81,7 @@ func (s *server) autocomplete(c *gin.Context) {
 		}
 		return cmp.Compare(a.t.Name, b.t.Name)
 	})
-	out := make([]featuredTarget, 0, min(len(matches), 10))
+	out := make([]FeaturedTarget, 0, min(len(matches), 10))
 	for _, m := range matches[:min(len(matches), 10)] {
 		out = append(out, m.t)
 	}
@@ -115,6 +115,13 @@ func (s *server) coverage(ctx context.Context, ra, dec float64) (*computeclient.
 	ra, dec = cache.RoundCoords(ra, dec)
 	got, err := s.Compute.Coverage(ctx, ra, dec)
 	if err != nil {
+		// With compute down, the last good answer keeps cached views opening (R5).
+		var stale computeclient.CoverageResponse
+		if fromCompute(err).status >= 500 && s.Cache.Get(ctx, cache.StaleKey(key), &stale) {
+			s.Log.WarnContext(ctx, "compute unavailable, serving stale coverage",
+				"key", key, "err", err, "request_id", computeclient.RequestID(ctx))
+			return &stale, nil
+		}
 		return nil, s.computeFailed(ctx, "coverage", err)
 	}
 	if got.Epochs == nil {
@@ -124,6 +131,7 @@ func (s *server) coverage(ctx context.Context, ra, dec float64) (*computeclient.
 		got.Releases = []computeclient.Release{}
 	}
 	s.Cache.Set(ctx, key, got, s.cfg.CoverageTTL)
+	s.Cache.Set(ctx, cache.StaleKey(key), got, s.cfg.StaleCoverageTTL)
 	if err := s.Store.AddReleases(ctx, got.Releases); err != nil {
 		s.Log.ErrorContext(ctx, "recording releases", "err", err, "request_id", computeclient.RequestID(ctx))
 	}
@@ -237,7 +245,8 @@ func (s *server) serveCachedView(c *gin.Context, key string) bool {
 	cache.Hit("view", err == nil)
 	switch {
 	case err == nil:
-		c.JSON(http.StatusOK, s.viewJSON(v))
+		// The key holds the current release set, so nothing newer exists.
+		c.JSON(http.StatusOK, s.viewJSON(c.Request.Context(), v, false))
 		return true
 	case !errors.Is(err, store.ErrNotFound):
 		s.internalError(c, "find view", err)
@@ -276,8 +285,30 @@ func (s *server) findView(c *gin.Context) {
 func (s *server) getView(c *gin.Context) {
 	v, ok := s.viewByID(c)
 	if ok {
-		c.JSON(http.StatusOK, s.viewJSON(v))
+		ctx := c.Request.Context()
+		c.JSON(http.StatusOK, s.viewJSON(ctx, v, s.newerData(ctx, v)))
 	}
+}
+
+// newerDataTimeout bounds the coverage lookup behind newer_data_available, so a
+// slow or unreachable compute never holds up a stored view (R5).
+const newerDataTimeout = 2 * time.Second
+
+// newerData reports whether a release that the view was not built from now
+// covers its position (B10). Best effort: false when coverage is unavailable.
+func (s *server) newerData(ctx context.Context, v *store.View) bool {
+	ctx, cancel := context.WithTimeout(ctx, newerDataTimeout)
+	defer cancel()
+	cov, e := s.coverage(ctx, v.Target.RA, v.Target.Dec)
+	if e != nil {
+		return false
+	}
+	for _, r := range cov.Releases {
+		if !slices.Contains(v.Params.Collections, r.Collection) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *server) viewByID(c *gin.Context) (*store.View, bool) {
@@ -293,7 +324,7 @@ func (s *server) viewByID(c *gin.Context) (*store.View, bool) {
 	return v, true
 }
 
-// view is the public view shape. Phase 2 adds release_set and newer_data_available (B10).
+// view is the public view shape.
 type view struct {
 	ID        string                `json:"id"`
 	Target    computeclient.Target  `json:"target"`
@@ -304,6 +335,9 @@ type view struct {
 	Stretch   computeclient.Stretch `json:"stretch"`
 	Warnings  []string              `json:"warnings"`
 	CreatedAt time.Time             `json:"created_at"`
+	// The releases the view was built from, and whether a newer one covers it (B10).
+	ReleaseSet         []computeclient.Release `json:"release_set"`
+	NewerDataAvailable bool                    `json:"newer_data_available"`
 }
 
 // frame is the CONTRACT Frame plus the public URL of its PNG. The client loads
@@ -314,7 +348,7 @@ type frame struct {
 	URL string `json:"url"`
 }
 
-func (s *server) viewJSON(v *store.View) view {
+func (s *server) viewJSON(ctx context.Context, v *store.View, newer bool) view {
 	frames := make([]frame, len(v.Frames))
 	for i, f := range v.Frames {
 		u, err := url.JoinPath(s.cfg.FramesBaseURL, f.ObjectKey)
@@ -323,9 +357,18 @@ func (s *server) viewJSON(v *store.View) view {
 		}
 		frames[i] = frame{FrameInfo: f.FrameInfo, URL: u}
 	}
+	releases, err := s.Store.Releases(ctx, v.Params.Collections)
+	if err != nil {
+		s.Log.ErrorContext(ctx, "release names", "err", err, "request_id", computeclient.RequestID(ctx))
+		releases = make([]computeclient.Release, len(v.Params.Collections))
+		for i, c := range v.Params.Collections {
+			releases[i] = computeclient.Release{Name: c, Collection: c}
+		}
+	}
 	return view{
 		ID: v.ID, Target: v.Target, FOVArcmin: v.Params.FOVArcmin, Mode: v.Params.Mode,
 		Epochs: v.Epochs, Frames: frames, Stretch: v.Stretch, Warnings: v.Warnings, CreatedAt: v.CreatedAt,
+		ReleaseSet: releases, NewerDataAvailable: newer,
 	}
 }
 
@@ -355,7 +398,7 @@ func (s *server) getJob(c *gin.Context) {
 			s.internalError(c, "get job view", err)
 			return
 		}
-		out["result"] = s.viewJSON(v)
+		out["result"] = s.viewJSON(ctx, v, s.newerData(ctx, v))
 	case store.StatusFailed:
 		out["error"] = job.Error
 	}

@@ -1,0 +1,378 @@
+[
+  {
+    "slug": "barnards-star",
+    "error": null,
+    "ra": 269.4520769586187,
+    "dec": 4.693364966576667,
+    "seen_ra": 269.4462277784975,
+    "seen_dec": 4.768720986995404,
+    "seen_mjd": 61106.54836515934,
+    "images": 364,
+    "skipped": 0,
+    "collections": [
+      "spherex_dr1",
+      "spherex_qr3"
+    ],
+    "epochs": [
+      [
+        "2025-08-15",
+        118
+      ],
+      [
+        "2026-03-11",
+        122
+      ],
+      [
+        "2026-08-16",
+        124
+      ]
+    ],
+    "detectors": {
+      "1": {
+        "exposures": 3,
+        "detected": 0,
+        "clean": 0,
+        "saturated": 3,
+        "flagged": 3
+      },
+      "2": {
+        "exposures": 3,
+        "detected": 0,
+        "clean": 0,
+        "saturated": 3,
+        "flagged": 3
+      },
+      "3": {
+        "exposures": 3,
+        "detected": 0,
+        "clean": 0,
+        "saturated": 3,
+        "flagged": 3
+      },
+      "4": {
+        "exposures": 3,
+        "detected": 0,
+        "clean": 0,
+        "saturated": 3,
+        "flagged": 3
+      },
+      "5": {
+        "exposures": 3,
+        "detected": 0,
+        "clean": 0,
+        "saturated": 3,
+        "flagged": 3
+      },
+      "6": {
+        "exposures": 3,
+        "detected": 0,
+        "clean": 0,
+        "saturated": 2,
+        "flagged": 2
+      }
+    },
+    "clean_epochs": 0,
+    "passed": false
+  },
+  {
+    "slug": "wise-0855",
+    "error": null,
+    "ra": 133.81890825,
+    "dec": -7.247048000000001,
+    "seen_ra": 133.75980048132035,
+    "seen_dec": -7.242185081793276,
+    "seen_mjd": 61035.34540981395,
+    "images": 258,
+    "skipped": 0,
+    "collections": [
+      "spherex_dr1"
+    ],
+    "epochs": [
+      [
+        "2025-05-05",
+        30
+      ],
+      [
+        "2025-10-31",
+        128
+      ],
+      [
+        "2026-04-21",
+        100
+      ]
+    ],
+    "detectors": {
+      "1": {
+        "exposures": 3,
+        "detected": 3,
+        "clean": 3,
+        "saturated": 0,
+        "flagged": 0
+      },
+      "2": {
+        "exposures": 3,
+        "detected": 2,
+        "clean": 2,
+        "saturated": 0,
+        "flagged": 0
+      },
+      "3": {
+        "exposures": 3,
+        "detected": 3,
+        "clean": 3,
+        "saturated": 0,
+        "flagged": 0
+      },
+      "4": {
+        "exposures": 3,
+        "detected": 2,
+        "clean": 2,
+        "saturated": 0,
+        "flagged": 0
+      },
+      "5": {
+        "exposures": 3,
+        "detected": 1,
+        "clean": 1,
+        "saturated": 0,
+        "flagged": 0
+      },
+      "6": {
+        "exposures": 3,
+        "detected": 0,
+        "clean": 0,
+        "saturated": 0,
+        "flagged": 0
+      }
+    },
+    "clean_epochs": 3,
+    "passed": true
+  },
+  {
+    "slug": "epsilon-indi-b",
+    "error": null,
+    "ra": 331.04414658852124,
+    "dec": -56.782844195116105,
+    "seen_ra": 331.0966619665665,
+    "seen_dec": -56.80064686689667,
+    "seen_mjd": 61039.768091826176,
+    "images": 466,
+    "skipped": 1,
+    "collections": [
+      "spherex_dr1",
+      "spherex_qr3"
+    ],
+    "epochs": [
+      [
+        "2025-04-24",
+        125
+      ],
+      [
+        "2025-09-28",
+        146
+      ],
+      [
+        "2026-04-18",
+        75
+      ],
+      [
+        "2026-09-22",
+        120
+      ]
+    ],
+    "detectors": {
+      "1": {
+        "exposures": 3,
+        "detected": 2,
+        "clean": 2,
+        "saturated": 0,
+        "flagged": 0
+      },
+      "2": {
+        "exposures": 4,
+        "detected": 4,
+        "clean": 4,
+        "saturated": 0,
+        "flagged": 0
+      },
+      "3": {
+        "exposures": 4,
+        "detected": 4,
+        "clean": 4,
+        "saturated": 0,
+        "flagged": 0
+      },
+      "4": {
+        "exposures": 3,
+        "detected": 3,
+        "clean": 1,
+        "saturated": 0,
+        "flagged": 2
+      },
+      "5": {
+        "exposures": 4,
+        "detected": 4,
+        "clean": 4,
+        "saturated": 0,
+        "flagged": 0
+      },
+      "6": {
+        "exposures": 4,
+        "detected": 3,
+        "clean": 3,
+        "saturated": 0,
+        "flagged": 0
+      }
+    },
+    "clean_epochs": 4,
+    "passed": true
+  },
+  {
+    "slug": "rw-aurigae",
+    "error": null,
+    "ra": 76.95652603458333,
+    "dec": 30.401438173888888,
+    "seen_ra": 76.95658699760848,
+    "seen_dec": 30.401290322339204,
+    "seen_mjd": 61107.21361508631,
+    "images": 336,
+    "skipped": 0,
+    "collections": [
+      "spherex_dr1",
+      "spherex_qr3"
+    ],
+    "epochs": [
+      [
+        "2025-09-01",
+        112
+      ],
+      [
+        "2026-02-20",
+        114
+      ],
+      [
+        "2026-09-02",
+        110
+      ]
+    ],
+    "detectors": {
+      "1": {
+        "exposures": 3,
+        "detected": 3,
+        "clean": 1,
+        "saturated": 2,
+        "flagged": 2
+      },
+      "2": {
+        "exposures": 3,
+        "detected": 3,
+        "clean": 0,
+        "saturated": 3,
+        "flagged": 3
+      },
+      "3": {
+        "exposures": 3,
+        "detected": 3,
+        "clean": 0,
+        "saturated": 2,
+        "flagged": 3
+      },
+      "4": {
+        "exposures": 3,
+        "detected": 0,
+        "clean": 0,
+        "saturated": 3,
+        "flagged": 3
+      },
+      "5": {
+        "exposures": 3,
+        "detected": 3,
+        "clean": 0,
+        "saturated": 3,
+        "flagged": 3
+      },
+      "6": {
+        "exposures": 3,
+        "detected": 3,
+        "clean": 0,
+        "saturated": 3,
+        "flagged": 3
+      }
+    },
+    "clean_epochs": 1,
+    "passed": false
+  },
+  {
+    "slug": "r-draconis",
+    "error": null,
+    "ra": 248.16761083295,
+    "dec": 66.75497941722,
+    "seen_ra": 248.16723017665774,
+    "seen_dec": 66.75502416659488,
+    "seen_mjd": 61113.78785603227,
+    "images": 2510,
+    "skipped": 0,
+    "collections": [
+      "spherex_dr1",
+      "spherex_dr1_deep",
+      "spherex_qr3",
+      "spherex_qr3_deep"
+    ],
+    "epochs": [
+      [
+        "2025-04-24",
+        248
+      ],
+      [
+        "2025-08-29",
+        2262
+      ]
+    ],
+    "detectors": {
+      "1": {
+        "exposures": 2,
+        "detected": 0,
+        "clean": 0,
+        "saturated": 2,
+        "flagged": 2
+      },
+      "2": {
+        "exposures": 2,
+        "detected": 0,
+        "clean": 0,
+        "saturated": 2,
+        "flagged": 2
+      },
+      "3": {
+        "exposures": 2,
+        "detected": 0,
+        "clean": 0,
+        "saturated": 2,
+        "flagged": 2
+      },
+      "4": {
+        "exposures": 2,
+        "detected": 0,
+        "clean": 0,
+        "saturated": 2,
+        "flagged": 2
+      },
+      "5": {
+        "exposures": 2,
+        "detected": 0,
+        "clean": 0,
+        "saturated": 2,
+        "flagged": 2
+      },
+      "6": {
+        "exposures": 2,
+        "detected": 0,
+        "clean": 0,
+        "saturated": 2,
+        "flagged": 2
+      }
+    },
+    "clean_epochs": 0,
+    "passed": false
+  }
+]

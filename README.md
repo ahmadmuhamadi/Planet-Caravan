@@ -11,8 +11,8 @@ Flow: `client → gateway → compute`. Specs are in `docs/`.
 ## Run
 
 ```bash
-cd gateway && go run .                                  # :8080/health
-cd compute && uv sync && uv run uvicorn main:app --reload  # :8000/health
+cd gateway && go run ./cmd/gateway                      # :8080/health (env: see gateway/cmd/gateway/config.go)
+cd compute && uv sync && uv run uvicorn app.main:app --reload  # :8000/health
 cd client && npm ci && npm run dev                      # :5173
 ```
 

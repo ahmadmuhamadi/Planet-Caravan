@@ -30,3 +30,6 @@ node_modules/
 
 # Local cutout cache
 compute/.cache/
+
+# Phase 0 gate frames (results/*.json are kept as the record)
+/compute/gates/out/

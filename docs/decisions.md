@@ -4,8 +4,9 @@ Phase 0 gate record (G1–G4) and later design decisions. Each external fact is
 **Confirmed** (checked against a live service or the docs) or **Assumed** (our
 choice, kept in compute config). All checks below were made on 2026-11-13.
 
-Script: `compute/gates/gates.py` (`g1`, `g2`, `g3`). Reproduce with
-`cd compute && uv run python gates/gates.py g1`.
+Script: `compute/gates/gates.py` (`g1` to `g4`). Reproduce with
+`cd compute && uv run python -m gates.gates <gate>`. G2–G4 also write their full
+result to `compute/gates/results/<gate>.json`.
 
 ## G1 — data facts
 
@@ -36,6 +37,59 @@ parallel downloads and 6–16 s per cutout, a cold view takes about 5–13 min, 
 the 5-minute job limit (B3). Mitigations already in the spec: D5 cutout cache
 and B11 pre-computed featured targets. Requests can also be narrowed with the
 `detectors` and `epochs` options. To revisit after Phase 1 timing.
+
+## G2 — targets checked
+
+First exposure per (epoch, detector), 2′ cutout at the target's position on that
+date. Clean = detected at SNR ≥ 5 with no masked flag in the core (r ≤ 1.5 px).
+Pass = at least 2 epochs, with a clean detection in at least 2 epochs.
+
+| Target | Images | Epochs | Clean epochs | Result | Why |
+|---|---|---|---|---|---|
+| Barnard's Star | 364 | 3 | 0 | **Fail** | Core saturated in every detector |
+| WISE 0855 | 258 | 3 | 3 | **Pass** | Clean in D1–D5; D6 not detected |
+| Epsilon Indi B | 466 | 4 | 4 | **Pass** | Clean in all detectors (D4 core flagged in 2 epochs) |
+| RW Aurigae | 336 | 3 | 1 | **Fail** | Saturated in most detectors |
+| R Draconis | 2510 | 2 | 0 | **Fail** | Core saturated in every detector |
+
+Findings:
+- SPHEREx saturates on bright near-infrared stars. All three stars brighter than
+  about K = 5 fail; both faint brown dwarfs pass. Featured targets must be faint
+  in the near infrared.
+- IRSA refuses some cutouts with HTTP 422 (one Epsilon Indi B image). Compute
+  must skip such an image, not fail the view.
+- Fast movers are far from their J2000 position by SPHEREx's dates: Barnard's Star
+  by about 4.5′, more than a 3′ field. Featured positions are propagated to the
+  mean image date (`seen_ra`, `seen_dec` in g2.json).
+
+## G3 — science proven: **awaiting a ruling**
+
+WISE 0855, 6′ field, 263 images, 3 epochs × 6 detectors, co-added per (epoch,
+detector) on a 6.2″ TAN grid, one stretch per detector. Residual = median offset
+of isolated Gaia DR3 stars (G < 16, propagated to the frame date) from their
+centroids. Threshold 1.2″ (0.2 px).
+
+| Epoch | D1 | D2 | D3 | D4 | D5 | D6 |
+|---|---|---|---|---|---|---|
+| 0 (2025-05) | too few stars | 0.83″ | 0.67″ | 1.04″ | 0.78″ | **1.44″** |
+| 1 (2025-11) | 0.48″ | 0.66″ | 0.76″ | 0.76″ | 0.95″ | 0.59″ |
+| 2 (2026-05) | 0.65″ | 0.73″ | 1.07″ | 0.89″ | 0.94″ | 0.65″ |
+
+- 16 of 17 measured frames pass; median residual 0.76″ (0.12 px).
+- Epoch 0 D6 fails at 1.44″. It is the weakest frame: 3 exposures, 3 stars.
+- Every frame is offset north (dy +0.5″ to +1.0″, all positive): a systematic
+  effect, not noise. Not yet explained.
+- Only 3–5 usable Gaia stars per frame (11 with G < 16 in the field), so each
+  residual rests on few stars.
+- Visual check: field stars hold position across epochs and detectors.
+
+Open question: does G3 require every frame under the threshold, or is it met when
+alignment works and frames above it are flagged `low_alignment_quality` (S3)?
+
+## G4 — demo set frozen: **not met**
+
+Needs 3–5 targets passing G2; 2 pass (WISE 0855, Epsilon Indi B). The
+requirements say a failing target is replaced. Replacements not chosen yet.
 
 ## Frame images are served directly from storage (2026-11-13)
 

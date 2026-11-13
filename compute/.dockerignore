@@ -3,3 +3,8 @@
 .env
 __pycache__
 tests
+.cache
+.mypy_cache
+.ruff_cache
+.pytest_cache
+gates/out

@@ -7,3 +7,6 @@ bun.lockb
 
 # Miscellaneous
 /static/
+
+# Generated from schema/gateway.openapi.json (npm run gen:api)
+src/lib/gateway-schema.d.ts

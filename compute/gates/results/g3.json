@@ -1,0 +1,209 @@
+{
+  "slug": "wise-0855",
+  "fov_arcmin": 6.0,
+  "images": 263,
+  "skipped": 0,
+  "threshold_arcsec": 1.2,
+  "frames": [
+    {
+      "epoch": 0,
+      "detector": 1,
+      "exposures": 4,
+      "stars": 1,
+      "dx": null,
+      "dy": null,
+      "residual": null,
+      "scatter": null,
+      "passed": null
+    },
+    {
+      "epoch": 0,
+      "detector": 2,
+      "exposures": 8,
+      "stars": 4,
+      "dx": 0.1728912005599435,
+      "dy": 0.8166291469259945,
+      "residual": 0.8347302144047118,
+      "scatter": 1.013481676486573,
+      "passed": true
+    },
+    {
+      "epoch": 0,
+      "detector": 3,
+      "exposures": 3,
+      "stars": 5,
+      "dx": 0.242784855708598,
+      "dy": 0.6260749504167749,
+      "residual": 0.6715015485468457,
+      "scatter": 1.606581685411327,
+      "passed": true
+    },
+    {
+      "epoch": 0,
+      "detector": 4,
+      "exposures": 4,
+      "stars": 3,
+      "dx": 0.5145380273628046,
+      "dy": 0.9090939494149126,
+      "residual": 1.0446057583917532,
+      "scatter": 2.0470565584186167,
+      "passed": true
+    },
+    {
+      "epoch": 0,
+      "detector": 5,
+      "exposures": 8,
+      "stars": 5,
+      "dx": 0.4122823816491376,
+      "dy": 0.664313728603458,
+      "residual": 0.7818500445925127,
+      "scatter": 1.434203477898563,
+      "passed": true
+    },
+    {
+      "epoch": 0,
+      "detector": 6,
+      "exposures": 3,
+      "stars": 3,
+      "dx": 0.665408139447365,
+      "dy": 1.2784574175636472,
+      "residual": 1.4412568683500917,
+      "scatter": 0.71710047810057,
+      "passed": false
+    },
+    {
+      "epoch": 1,
+      "detector": 1,
+      "exposures": 18,
+      "stars": 5,
+      "dx": -0.1322464256641318,
+      "dy": 0.4568415989040155,
+      "residual": 0.47559790116243794,
+      "scatter": 0.9974352912395436,
+      "passed": true
+    },
+    {
+      "epoch": 1,
+      "detector": 2,
+      "exposures": 25,
+      "stars": 5,
+      "dx": -0.01068271747054439,
+      "dy": 0.6643356779555184,
+      "residual": 0.6644215630585553,
+      "scatter": 1.2433347514297861,
+      "passed": true
+    },
+    {
+      "epoch": 1,
+      "detector": 3,
+      "exposures": 22,
+      "stars": 3,
+      "dx": -0.23875688437645196,
+      "dy": 0.7218407356997574,
+      "residual": 0.7603018463430938,
+      "scatter": 2.0557008988349277,
+      "passed": true
+    },
+    {
+      "epoch": 1,
+      "detector": 4,
+      "exposures": 19,
+      "stars": 5,
+      "dx": -0.1354524054362866,
+      "dy": 0.7504473411014395,
+      "residual": 0.7625736462170041,
+      "scatter": 1.6208849161443883,
+      "passed": true
+    },
+    {
+      "epoch": 1,
+      "detector": 5,
+      "exposures": 25,
+      "stars": 4,
+      "dx": -0.14665500216702512,
+      "dy": 0.9384860968710094,
+      "residual": 0.9498756990684579,
+      "scatter": 1.300059457938146,
+      "passed": true
+    },
+    {
+      "epoch": 1,
+      "detector": 6,
+      "exposures": 21,
+      "stars": 4,
+      "dx": -0.3443960368301264,
+      "dy": 0.4776170814988248,
+      "residual": 0.5888350420310877,
+      "scatter": 1.512344528701599,
+      "passed": true
+    },
+    {
+      "epoch": 2,
+      "detector": 1,
+      "exposures": 15,
+      "stars": 4,
+      "dx": 0.2230316781789913,
+      "dy": 0.611054243554743,
+      "residual": 0.6504847561915624,
+      "scatter": 1.196168949908261,
+      "passed": true
+    },
+    {
+      "epoch": 2,
+      "detector": 2,
+      "exposures": 15,
+      "stars": 4,
+      "dx": 0.14092574372508046,
+      "dy": 0.7124637811776389,
+      "residual": 0.7262676536473351,
+      "scatter": 0.9334648385624789,
+      "passed": true
+    },
+    {
+      "epoch": 2,
+      "detector": 3,
+      "exposures": 21,
+      "stars": 3,
+      "dx": 0.25802849714418413,
+      "dy": 1.034582731410241,
+      "residual": 1.0662739486036226,
+      "scatter": 2.033616751683433,
+      "passed": true
+    },
+    {
+      "epoch": 2,
+      "detector": 4,
+      "exposures": 15,
+      "stars": 4,
+      "dx": 0.24594683203689396,
+      "dy": 0.8504943834785645,
+      "residual": 0.8853420471871692,
+      "scatter": 1.0577294880892787,
+      "passed": true
+    },
+    {
+      "epoch": 2,
+      "detector": 5,
+      "exposures": 16,
+      "stars": 4,
+      "dx": 0.25213277774553816,
+      "dy": 0.901047673071793,
+      "residual": 0.9356590440762991,
+      "scatter": 1.3165190890525038,
+      "passed": true
+    },
+    {
+      "epoch": 2,
+      "detector": 6,
+      "exposures": 21,
+      "stars": 5,
+      "dx": 0.021327472601300457,
+      "dy": 0.6459060828117593,
+      "residual": 0.6462580977448488,
+      "scatter": 1.5494018362179072,
+      "passed": true
+    }
+  ],
+  "worst_residual": 1.4412568683500917,
+  "passed": false
+}
